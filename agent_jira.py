@@ -33,7 +33,12 @@ import sys
 from schema import UI_SCHEMA
 from connectors_jira import get_issues
 from validation import validate_view
-from guardrails import find_fabricated_content, find_fabricated_stats, fabricated_content_nudge
+from guardrails import (
+    find_fabricated_content,
+    find_fabricated_stats,
+    find_ungrounded_alert_claims,
+    fabricated_content_nudge,
+)
 import claude_engine as ce
 
 TOOLS = [
@@ -141,6 +146,42 @@ SYSTEM = (
     "not add a second 'panel' component next to the list just to restate a count — the list "
     "itself already shows every issue; a redundant summary panel is exactly the kind of "
     "unrequested padding to avoid.\n\n"
+    "Three more component types exist beyond stat_grid/panel/list/suggestions — reach for "
+    "whichever actually fits the shape of the request, don't default to 'list' out of habit:\n"
+    "- 'metric': when the real answer is exactly ONE number (e.g. 'how many issues are "
+    "blocked right now?', 'how many are unassigned?') — a single big emphasized figure reads "
+    "far better than a one-card stat_grid or a list of one row. Put exactly one entry in "
+    "'stats', a real count of what get_issues actually returned.\n"
+    "- 'timeline': for requests that are naturally about recency/order over a SET of issues — "
+    "'what's changed recently', 'what's been updated this week', 'newest bugs first'. Sort the "
+    "real issues by their real 'created' or 'updated' date and put them in 'rows' in that order "
+    "(name = issue key + summary, note = the real date, e.g. 'Updated 2026-08-30'). This "
+    "connector has no per-issue changelog/history — never invent a fake sequence of status "
+    "changes for a single issue; timeline here means several real issues in real chronological "
+    "order, nothing else.\n"
+    "- 'chart': when a request is about how issues split up/compare across categories — 'break "
+    "down open bugs by priority', 'how are ENG issues distributed by status'. Put one 'stats' "
+    "entry per category (label = the category, e.g. 'Highest'/'High'/'Medium'; value = the real "
+    "count of issues in it as a plain number string, e.g. '4') — never a stat_grid for this "
+    "shape of request, a chart's bars make the comparison visible in a way separate cards don't.\n"
+    "- 'alert': when the real answer IS a single urgent condition worth calling out on its own "
+    "— 'is anything blocked and overdue', 'anything I should know about right now'. Set 'title' "
+    "to the real, derived claim (e.g. '3 issues are blocked and past their due date'), 'badge' "
+    "tone to 'critical'/'warning' to match its urgency, and 'subtitle' to one more sentence of "
+    "real context if useful. Only use this when there's one real, specific thing worth flagging "
+    "— never invent an alert when the honest answer is 'nothing urgent right now' (say that in "
+    "the heading/meta instead).\n"
+    "- 'task_queue': when a request is about outstanding work/to-dos rather than a general list "
+    "— 'what's overdue', 'what does Priya still need to do'. Same row shape as 'list' (name = "
+    "issue key + summary, note = assignee and/or real due date, e.g. 'Due 2026-09-02'), rendered "
+    "as a checklist instead — use it when the request frames things as work to get done, use "
+    "plain 'list' when it's just asking what exists.\n"
+    "- 'data_table': when a request needs several real fields compared side by side across "
+    "multiple issues — e.g. 'show me open bugs with their assignee and due date' — use real "
+    "columns (2-5 of them, e.g. ['Key', 'Summary', 'Assignee', 'Due']) instead of cramming "
+    "extra facts into a list row's one 'note' string. Each table_rows entry's 'values' must "
+    "have one real value per column, same order. This is often a better fit than 'list' "
+    "specifically when the request names more than two fields it cares about.\n\n"
     "Only call ask_user first if the request is genuinely ambiguous in a way that would change "
     "what you'd fetch — and only once. After the person answers, proceed straight to get_issues "
     "and render_view; do not ask a second question in the same request, and do not ask about "
@@ -331,6 +372,7 @@ def _make_dispatch(seed_fetched_data, verbose, first_turn=False):
             fabricated = (
                 find_fabricated_content(args, prior_messages)
                 + find_fabricated_stats(args, prior_messages)
+                + find_ungrounded_alert_claims(args, prior_messages)
                 + _find_placeholder_labels(args)
             )
             if fabricated:

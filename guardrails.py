@@ -213,6 +213,20 @@ def find_fabricated_content(view, messages):
             if isinstance(val, str) and len(_tokens(val)) >= _MIN_CHECKABLE_TOKENS:
                 if not content_is_grounded(val, records):
                     bad.append(val)
+        # Added 2026-09-05 alongside schema.py's new "data_table" component
+        # type — table_rows[].values is data_table's own shape (there's no
+        # per-cell label the way "fields" has, just an ordered list of cell
+        # strings matching "columns"), so it needs its own small loop here;
+        # "timeline" and "metric" needed no such addition since they reuse
+        # rows/stats verbatim and are already covered above / by
+        # find_fabricated_stats below respectively.
+        for row in (comp.get("table_rows") or []):
+            if not isinstance(row, dict):
+                continue
+            for val in (row.get("values") or []):
+                if isinstance(val, str) and len(_tokens(val)) >= _MIN_CHECKABLE_TOKENS:
+                    if not content_is_grounded(val, records):
+                        bad.append(val)
 
     # de-dupe while preserving order
     seen = set()
@@ -334,6 +348,38 @@ def find_ungrounded_suggestion_facts(view, messages):
             for token in _CURRENCY_TOKEN_RE.findall(s):
                 if not content_is_grounded(token, records):
                     bad.append(s)
+                    break
+
+    seen = set()
+    return [b for b in bad if not (b in seen or seen.add(b))]
+
+
+def find_ungrounded_alert_claims(view, messages):
+    """
+    Sibling of find_ungrounded_suggestion_facts, scoped to schema.py's
+    2026-09-05 "alert" component type. An alert's title/subtitle is
+    freeform prose synthesizing a real condition ("3 issues are blocked
+    and overdue") rather than a copied field value — the exact shape of
+    claim find_ungrounded_suggestion_facts already exists to police for
+    suggestions, so this reuses the same narrow "financial-looking figure"
+    trigger and the same per-token (not whole-sentence) check, for the
+    same reason: most of an alert sentence's words are the model's own
+    connective prose and would false-positive against raw fetched JSON if
+    checked as a whole string.
+    """
+    tool_results = extract_tool_results(messages)
+    records = records_from_tool_results(tool_results)
+
+    bad = []
+    for comp in (view.get("components") or []):
+        if not isinstance(comp, dict) or comp.get("type") != "alert":
+            continue
+        for text in (comp.get("title"), comp.get("subtitle")):
+            if not isinstance(text, str):
+                continue
+            for token in _CURRENCY_TOKEN_RE.findall(text):
+                if not content_is_grounded(token, records):
+                    bad.append(text)
                     break
 
     seen = set()

@@ -2441,6 +2441,29 @@ def _render_memory_line(render):
             parts.append(f"{len(comp.get('stats') or [])} stat card(s)")
         elif t == "panel":
             parts.append("a detail panel")
+        # 2026-09-05: the 6 new component types (plus "suggestions", which
+        # predates them but was never added here either) were silently
+        # falling through to "a screen with no components" whenever they
+        # were the only thing on a screen — weakening a follow-up request's
+        # ("make it more compact", "now add a filter") ability to refer back
+        # to what was actually just built. Same one-clause-per-type pattern
+        # as the three above, just extended to cover the full vocabulary.
+        elif t == "suggestions":
+            parts.append(f"{len(comp.get('suggestions') or [])} suggested action(s)")
+        elif t == "timeline":
+            parts.append(f"a timeline of {len(comp.get('rows') or [])} event(s)")
+        elif t == "metric":
+            stats = comp.get("stats") or []
+            label = stats[0].get("label") if stats and isinstance(stats[0], dict) else None
+            parts.append(f"a headline metric ({label})" if label else "a headline metric")
+        elif t == "data_table":
+            parts.append(f"a table of {len(comp.get('table_rows') or [])} row(s)")
+        elif t == "chart":
+            parts.append(f"a chart with {len(comp.get('stats') or [])} bar(s)")
+        elif t == "alert":
+            parts.append("an alert banner")
+        elif t == "task_queue":
+            parts.append(f"a task queue of {len(comp.get('rows') or [])} item(s)")
     body = ", ".join(parts) if parts else "a screen with no components"
     return f'Built "{heading}" — {body}.'
 

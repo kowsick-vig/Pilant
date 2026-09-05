@@ -3,6 +3,12 @@ Validates a generated view against the UI schema and produces a short,
 specific error the model can act on — this is what turns "the model did
 something wrong" into "the model corrects itself and retries," instead of
 malformed output silently reaching a renderer.
+
+Note on schema.py's 2026-09-05 new component types (timeline, metric,
+data_table): nothing here needed to change. This validator runs whatever
+JSON Schema schema.py hands it via Draft7Validator, generically — it has
+no per-type logic of its own — so the new types are already fully
+enforced the moment schema.py's enum/field definitions include them.
 """
 
 from jsonschema import Draft7Validator

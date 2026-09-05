@@ -28,6 +28,21 @@ def _badge(b):
     return f'<span class="badge {tone}">{_esc(b.get("text", ""))}</span>'
 
 
+_LEADING_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _parse_numeric(value):
+    """Best-effort magnitude for a stat's display value, for type=chart's
+    bar widths — e.g. '5' -> 5.0, '42%' -> 42.0, '$1,200' -> 1200.0. Strips
+    thousands separators before matching so '1,200' isn't misread as '1'.
+    Returns 0.0 (an empty/zero-width bar, never a guess) if nothing
+    number-like is found, rather than fabricating a magnitude."""
+    if not isinstance(value, str):
+        return 0.0
+    m = _LEADING_NUMBER_RE.search(value.replace(",", ""))
+    return float(m.group()) if m else 0.0
+
+
 def _list_row_html(r):
     # url is OPTIONAL and additive (schema.py, added 2026-08-26 for
     # search_knowledge_base results rendered via render_view) — most
@@ -373,6 +388,199 @@ def _component_html(c, connector_links=None, connector_colors=None, jira_detail_
             f'{title_html}<ul class="suggestion-list">{rows}</ul></div>'
         )
 
+    if ctype == "timeline":
+        # Added 2026-09-05. Deliberately reuses the exact same row shape as
+        # "list" (name/note/action/url/badge — see schema.py) so this is a
+        # visual variant, not a new data shape: guardrails.find_fabricated_content
+        # already checks rows[].name/note/url regardless of which component
+        # type they're attached to, so this needed no guardrails change.
+        row_items = c.get("rows", [])
+        title = c.get("title")
+        # Same Jira detail-panel row-linking as "list" (see that branch's
+        # comment above) — added 2026-09-05 fixing a gap where timeline was
+        # a real, encouraged choice for Jira-titled screens (per
+        # agent_jira.py's own prompt guidance) but never got a working
+        # detail-panel link. Kept as an exact mirror rather than a shared
+        # helper so each branch's row-shape stays visibly self-contained.
+        if title and jira_detail_base and "jira" in title.lower():
+            linked_rows = []
+            for r in row_items:
+                if isinstance(r, dict) and not r.get("url") and isinstance(r.get("name"), str):
+                    m = _ISSUE_KEY_RE.match(r["name"].strip())
+                    if m:
+                        r = {**r, "url": jira_detail_base + m.group(1)}
+                linked_rows.append(r)
+            row_items = linked_rows
+        title_html = f'<p class="panel-title">{_esc(title)}</p>' if title else ""
+        subtitle_html = f'<p class="panel-sub" style="margin-bottom:10px;">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        if not row_items:
+            body = f'{title_html}{subtitle_html}<div class="panel-sub" style="padding:8px 0;">Nothing to show yet.</div>'
+        else:
+            def _timeline_name_html(r):
+                # Same url-wraps-name treatment as _list_row_html — needed so
+                # the jira_detail_base linking above (which only sets r["url"])
+                # actually surfaces as a click target here, not just silently
+                # attached data.
+                name_text = _esc(r.get("name"))
+                url = r.get("url")
+                return (
+                    f'<a href="{_esc(url)}" target="_blank" rel="noopener">{name_text}</a>'
+                    if url else name_text
+                )
+            items_html = "".join(
+                '<li class="timeline-item">'
+                '<span class="timeline-dot"></span>'
+                f'<div class="timeline-name">{_timeline_name_html(r)}</div>'
+                + (f'<div class="timeline-note">{_esc(r.get("note"))}</div>' if isinstance(r, dict) and r.get("note") else "")
+                + (_badge(r.get("badge")) if isinstance(r, dict) and r.get("badge") else "")
+                + '</li>'
+                for r in row_items if isinstance(r, dict)
+            )
+            body = f'{title_html}{subtitle_html}<ul class="timeline">{items_html}</ul>'
+        # data-src/feed-block: same merged-screen filter-chip wiring as
+        # "list" (see that branch's comment) — added 2026-09-05 so a titled
+        # timeline can be a chip target too, not just list.
+        if title:
+            return f'<div class="panel feed-block" data-src="{_esc(_slugify(title))}">{body}</div>'
+        return f'<div class="panel">{body}</div>'
+
+    if ctype == "metric":
+        # Added 2026-09-05. Reuses "stats" verbatim (schema.py: expects
+        # exactly one entry) — a single big emphasized number instead of
+        # stat_grid's grid-of-cards treatment, for requests whose real
+        # answer is one number ("how many issues are blocked?"). Already
+        # covered by guardrails.find_fabricated_stats, which scans any
+        # component's "stats" array regardless of type.
+        stats = c.get("stats") or []
+        if not stats:
+            return ""
+        s = stats[0]
+        tone = _esc(s.get("tone", "default"))
+        return (
+            f'<div class="panel metric-card tone-{tone}">'
+            f'<span class="metric-value">{_esc(s.get("value"))}</span>'
+            f'<span class="metric-label">{_esc(s.get("label"))}</span>'
+            '</div>'
+        )
+
+    if ctype == "data_table":
+        # Added 2026-09-05 — the one genuinely new shape (columns +
+        # table_rows), for when several real fields need to sit side by
+        # side as actual columns instead of crammed into one list row's
+        # note. guardrails.find_fabricated_content has a matching
+        # table_rows[].values loop alongside this.
+        columns = [c2 for c2 in (c.get("columns") or []) if isinstance(c2, str)]
+        rows = c.get("table_rows") or []
+        title_html = f'<p class="panel-title">{_esc(c.get("title"))}</p>' if c.get("title") else ""
+        subtitle_html = f'<p class="panel-sub" style="margin-bottom:10px;">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        if not columns or not rows:
+            return f'<div class="panel">{title_html}{subtitle_html}<div class="panel-sub" style="padding:8px 0;">Nothing to show yet.</div></div>'
+        head_html = "".join(f"<th>{_esc(col)}</th>" for col in columns)
+        body_rows = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            values = r.get("values") or []
+            cells = "".join(f"<td>{_esc(v)}</td>" for v in values)
+            badge_cell = f'<td>{_badge(r.get("badge"))}</td>' if r.get("badge") else ""
+            body_rows.append(f"<tr>{cells}{badge_cell}</tr>")
+        badge_head = "<th></th>" if any(isinstance(r, dict) and r.get("badge") for r in rows) else ""
+        table_html = (
+            '<div class="data-table-wrap"><table class="data-table">'
+            f'<thead><tr>{head_html}{badge_head}</tr></thead>'
+            f'<tbody>{"".join(body_rows)}</tbody>'
+            '</table></div>'
+        )
+        return f'<div class="panel">{title_html}{subtitle_html}{table_html}</div>'
+
+    if ctype == "chart":
+        # Added 2026-09-05 (second round). Reuses "stats" verbatim, same as
+        # "metric" — a third rendering treatment for the same shape, this
+        # time a horizontal bar per entry. Already covered by
+        # guardrails.find_fabricated_stats, which scans any component's
+        # "stats" array regardless of type.
+        stats = c.get("stats") or []
+        title_html = f'<p class="panel-title">{_esc(c.get("title"))}</p>' if c.get("title") else ""
+        subtitle_html = f'<p class="panel-sub" style="margin-bottom:10px;">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        if not stats:
+            return f'<div class="panel">{title_html}{subtitle_html}<div class="panel-sub" style="padding:8px 0;">Nothing to show yet.</div></div>'
+        magnitudes = [_parse_numeric(s.get("value")) for s in stats if isinstance(s, dict)]
+        max_val = max(magnitudes) if magnitudes and max(magnitudes) > 0 else 1.0
+        bars_html = "".join(
+            '<div class="chart-row">'
+            f'<span class="chart-label">{_esc(s.get("label"))}</span>'
+            '<div class="chart-track">'
+            f'<div class="chart-bar tone-{_esc(s.get("tone", "default"))}" style="width:{max(_parse_numeric(s.get("value")) / max_val * 100, 3):.1f}%"></div>'
+            '</div>'
+            f'<span class="chart-value">{_esc(s.get("value"))}</span>'
+            '</div>'
+            for s in stats if isinstance(s, dict)
+        )
+        return f'<div class="panel">{title_html}{subtitle_html}<div class="chart">{bars_html}</div></div>'
+
+    if ctype == "alert":
+        # Added 2026-09-05 (second round). Reuses "title"/"subtitle"/"badge"
+        # verbatim — every component already has these — so this is purely
+        # a new visual treatment (a loud, tone-colored banner) for a single
+        # flagged condition. guardrails.find_ungrounded_alert_claims checks
+        # title/subtitle for this type specifically, since (unlike a plain
+        # section title) an alert's title is itself the claim being made.
+        tone = _esc(c.get("badge", {}).get("tone", "warning") if isinstance(c.get("badge"), dict) else "warning")
+        title_html = f'<p class="alert-title">{_esc(c.get("title"))}</p>'
+        subtitle_html = f'<p class="alert-sub">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        return f'<div class="alert-banner tone-{tone}">{title_html}{subtitle_html}</div>'
+
+    if ctype == "task_queue":
+        # Added 2026-09-05 (second round). Reuses "rows" verbatim, a third
+        # consumer of the same shape alongside list/timeline — a checklist
+        # treatment for outstanding work. Already covered by
+        # guardrails.find_fabricated_content's existing rows[] loop.
+        row_items = c.get("rows", [])
+        title = c.get("title")
+        # Same Jira detail-panel row-linking as "list"/"timeline" above —
+        # added 2026-09-05 for the same reason: task_queue is a real,
+        # encouraged choice for Jira-titled "what's overdue" screens.
+        if title and jira_detail_base and "jira" in title.lower():
+            linked_rows = []
+            for r in row_items:
+                if isinstance(r, dict) and not r.get("url") and isinstance(r.get("name"), str):
+                    m = _ISSUE_KEY_RE.match(r["name"].strip())
+                    if m:
+                        r = {**r, "url": jira_detail_base + m.group(1)}
+                linked_rows.append(r)
+            row_items = linked_rows
+        title_html = f'<p class="panel-title">{_esc(title)}</p>' if title else ""
+        subtitle_html = f'<p class="panel-sub" style="margin-bottom:10px;">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        if not row_items:
+            body = f'{title_html}{subtitle_html}<div class="panel-sub" style="padding:8px 0;">Nothing outstanding.</div>'
+        else:
+            def _task_name_html(r):
+                # Same url-wraps-name treatment as _list_row_html/timeline's
+                # helper above, for the same reason.
+                name_text = _esc(r.get("name"))
+                url = r.get("url")
+                return (
+                    f'<a href="{_esc(url)}" target="_blank" rel="noopener">{name_text}</a>'
+                    if url else name_text
+                )
+            items_html = "".join(
+                '<li class="task-row">'
+                '<span class="task-check"></span>'
+                '<div class="task-body">'
+                f'<div class="task-name">{_task_name_html(r)}</div>'
+                + (f'<div class="task-note">{_esc(r.get("note"))}</div>' if isinstance(r, dict) and r.get("note") else "")
+                + '</div>'
+                + (_badge(r.get("badge")) if isinstance(r, dict) and r.get("badge") else "")
+                + '</li>'
+                for r in row_items if isinstance(r, dict)
+            )
+            body = f'{title_html}{subtitle_html}<ul class="task-queue">{items_html}</ul>'
+        # data-src/feed-block: same merged-screen filter-chip wiring as
+        # "list"/"timeline" — added 2026-09-05.
+        if title:
+            return f'<div class="panel feed-block" data-src="{_esc(_slugify(title))}">{body}</div>'
+        return f'<div class="panel">{body}</div>'
+
     return f'<div class="panel"><p class="panel-sub">Unknown component type: {_esc(ctype)}</p></div>'
 
 
@@ -442,6 +650,47 @@ body { margin:0; background:var(--ground); color:var(--text); font-family:'IBM P
 .suggestion-list { margin:0; padding-left:18px; font-size:.85rem; color:var(--app-text); }
 .suggestion-list li { margin-bottom:6px; }
 .suggestion-list li:last-child { margin-bottom:0; }
+.timeline { list-style:none; margin:0; padding:0 0 0 4px; position:relative; }
+.timeline::before { content:""; position:absolute; left:5px; top:6px; bottom:6px; width:2px; background:var(--app-border); }
+.timeline-item { position:relative; padding:0 0 18px 24px; }
+.timeline-item:last-child { padding-bottom:0; }
+.timeline-dot { position:absolute; left:0; top:4px; width:12px; height:12px; border-radius:50%; background:var(--app-card); border:2px solid var(--app-accent); }
+.timeline-name { font-weight:600; font-size:.88rem; }
+.timeline-note { font-size:.78rem; color:var(--app-muted); margin-top:2px; }
+.metric-card { display:flex; flex-direction:column; align-items:flex-start; gap:4px; border-left:3px solid var(--app-border); }
+.metric-card.tone-critical { border-left-color:var(--app-critical); }
+.metric-card.tone-warning { border-left-color:var(--app-warning); }
+.metric-card.tone-good { border-left-color:var(--app-good); }
+.metric-value { font-family:'Sora',sans-serif; font-weight:700; font-size:2.4rem; line-height:1.1; }
+.metric-label { font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); font-family:'IBM Plex Mono',monospace; }
+.data-table-wrap { overflow-x:auto; }
+.data-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.data-table th { text-align:left; font-size:.68rem; letter-spacing:.04em; text-transform:uppercase; color:var(--app-muted); font-family:'IBM Plex Mono',monospace; font-weight:500; padding:0 12px 8px 0; border-bottom:1px solid var(--app-border); white-space:nowrap; }
+.data-table td { padding:10px 12px 10px 0; border-bottom:1px solid var(--app-border); vertical-align:top; }
+.data-table tr:last-child td { border-bottom:none; }
+.chart { display:flex; flex-direction:column; gap:12px; }
+.chart-row { display:grid; grid-template-columns:120px 1fr 48px; align-items:center; gap:10px; }
+.chart-label { font-size:.8rem; color:var(--app-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chart-track { background:var(--app-border); border-radius:999px; height:10px; overflow:hidden; }
+.chart-bar { height:100%; border-radius:999px; background:var(--app-accent); }
+.chart-bar.tone-critical { background:var(--app-critical); }
+.chart-bar.tone-warning { background:var(--app-warning); }
+.chart-bar.tone-good { background:var(--app-good); }
+.chart-value { font-family:'IBM Plex Mono',monospace; font-size:.78rem; color:var(--app-muted); text-align:right; }
+.alert-banner { border-radius:12px; padding:16px 20px; margin-bottom:12px; border:1px solid; }
+.alert-banner.tone-critical { background:var(--app-critical-bg); border-color:var(--app-critical); }
+.alert-banner.tone-warning { background:var(--app-warning-bg); border-color:var(--app-warning); }
+.alert-banner.tone-good { background:var(--app-good-bg); border-color:var(--app-good); }
+.alert-banner.tone-default { background:var(--app-card); border-color:var(--app-border); }
+.alert-title { font-family:'Sora',sans-serif; font-weight:600; font-size:.98rem; margin:0 0 4px; }
+.alert-sub { font-size:.82rem; margin:0; opacity:.85; }
+.task-queue { list-style:none; margin:0; padding:0; }
+.task-row { display:flex; align-items:flex-start; gap:12px; padding:11px 0; border-bottom:1px solid var(--app-border); }
+.task-row:last-child { border-bottom:none; }
+.task-check { flex:none; width:16px; height:16px; margin-top:2px; border:1.5px solid var(--app-border); border-radius:4px; }
+.task-body { flex:1; }
+.task-name { font-weight:600; font-size:.88rem; }
+.task-note { font-size:.78rem; color:var(--app-muted); margin-top:2px; }
 """
 
 # Styling for render_gmail_fragment() above — as of 2026-08-26, deliberately
@@ -751,7 +1000,10 @@ def _render_body(view, connector_links=None, connector_colors=None, jira_detail_
     meta = view.get("meta")
     meta_html = f'<p class="app-meta">{_esc(meta)}</p>' if meta else ""
     components = view.get("components", [])
-    titled_lists = [c for c in components if c.get("type") == "list" and c.get("title")]
+    # 2026-09-05: also catch titled timeline/task_queue components — both
+    # reuse the "list" row shape (and, since the fix above, the same
+    # data-src/feed-block wrapping), so they're equally valid chip targets.
+    titled_lists = [c for c in components if c.get("type") in ("list", "timeline", "task_queue") and c.get("title")]
     chip_html = _filter_chip_bar_html(titled_lists, connector_colors) if len(titled_lists) >= 2 else ""
     components_html = "".join(_component_html(c, connector_links, connector_colors, jira_detail_base) for c in components)
     script_html = FEED_FILTER_SCRIPT if chip_html else ""
@@ -851,6 +1103,81 @@ def _chat_inline_component_html(c, max_rows=3):
             return ""
         rows = "".join(f"<li>{_esc(s)}</li>" for s in items)
         return f'<p class="chat-result-name">Suggested</p><ul class="chat-result-rows">{rows}</ul>'
+
+    if ctype == "timeline":
+        # Same compact row treatment as "list" above — timeline is a full-
+        # size visual variant only (see _component_html); a chat bubble has
+        # no room for the dot/line styling anyway.
+        rows = c.get("rows") or []
+        title_html = f'<p class="chat-result-section">{_esc(c.get("title"))}</p>' if c.get("title") else ""
+        if not rows:
+            return f'{title_html}<p class="chat-result-empty">Nothing to show yet.</p>'
+        shown = rows[:max_rows]
+        items = "".join(
+            '<li>'
+            f'<span class="chat-result-name">{_esc(r.get("name"))}</span>'
+            + (f'<span class="chat-result-note">{_esc(r.get("note"))}</span>' if isinstance(r, dict) and r.get("note") else "")
+            + '</li>'
+            for r in shown if isinstance(r, dict)
+        )
+        more = len(rows) - len(shown)
+        more_html = f'<p class="chat-result-more">+{more} more &mdash; see live preview</p>' if more > 0 else ""
+        return f'{title_html}<ul class="chat-result-rows">{items}</ul>{more_html}'
+
+    if ctype == "metric":
+        stats = c.get("stats") or []
+        if not stats:
+            return ""
+        s = stats[0]
+        return f'<div class="chat-result-stats"><span class="chat-result-stat">{_esc(s.get("label"))}: <strong>{_esc(s.get("value"))}</strong></span></div>'
+
+    if ctype == "data_table":
+        columns = [c2 for c2 in (c.get("columns") or []) if isinstance(c2, str)]
+        rows = (c.get("table_rows") or [])[:max_rows]
+        title_html = f'<p class="chat-result-name">{_esc(c.get("title"))}</p>' if c.get("title") else ""
+        if not columns or not rows:
+            return f'{title_html}<p class="chat-result-empty">Nothing to show yet.</p>'
+        items = "".join(
+            '<li>' + ", ".join(
+                f"{_esc(columns[i])}: {_esc(v)}" for i, v in enumerate(r.get("values") or []) if i < len(columns)
+            ) + '</li>'
+            for r in rows if isinstance(r, dict)
+        )
+        more = len(c.get("table_rows") or []) - len(rows)
+        more_html = f'<p class="chat-result-more">+{more} more &mdash; see live preview</p>' if more > 0 else ""
+        return f'{title_html}<ul class="chat-result-rows">{items}</ul>{more_html}'
+
+    if ctype == "chart":
+        stats = (c.get("stats") or [])[:max_rows]
+        if not stats:
+            return ""
+        chips = "".join(
+            f'<span class="chat-result-stat">{_esc(s.get("label"))}: <strong>{_esc(s.get("value"))}</strong></span>'
+            for s in stats
+        )
+        return f'<div class="chat-result-stats">{chips}</div>'
+
+    if ctype == "alert":
+        title_html = f'<p class="chat-result-name">{_esc(c.get("title"))}</p>'
+        sub_html = f'<p class="chat-result-note">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        return f'{title_html}{sub_html}'
+
+    if ctype == "task_queue":
+        rows = c.get("rows") or []
+        title_html = f'<p class="chat-result-section">{_esc(c.get("title"))}</p>' if c.get("title") else ""
+        if not rows:
+            return f'{title_html}<p class="chat-result-empty">Nothing outstanding.</p>'
+        shown = rows[:max_rows]
+        items = "".join(
+            '<li>'
+            f'<span class="chat-result-name">{_esc(r.get("name"))}</span>'
+            + (f'<span class="chat-result-note">{_esc(r.get("note"))}</span>' if isinstance(r, dict) and r.get("note") else "")
+            + '</li>'
+            for r in shown if isinstance(r, dict)
+        )
+        more = len(rows) - len(shown)
+        more_html = f'<p class="chat-result-more">+{more} more &mdash; see live preview</p>' if more > 0 else ""
+        return f'{title_html}<ul class="chat-result-rows">{items}</ul>{more_html}'
 
     return ""
 
@@ -996,7 +1323,10 @@ def render_html(view, request_text="", nav_html="", connector_links=None, connec
     meta = view.get("meta")
     meta_html = f'<p class="app-meta">{_esc(meta)}</p>' if meta else ""
     components = view.get("components", [])
-    titled_lists = [c for c in components if c.get("type") == "list" and c.get("title")]
+    # 2026-09-05: also catch titled timeline/task_queue components — both
+    # reuse the "list" row shape (and, since the fix above, the same
+    # data-src/feed-block wrapping), so they're equally valid chip targets.
+    titled_lists = [c for c in components if c.get("type") in ("list", "timeline", "task_queue") and c.get("title")]
     chip_html = _filter_chip_bar_html(titled_lists, connector_colors) if len(titled_lists) >= 2 else ""
     components_html = "".join(_component_html(c, connector_links, connector_colors) for c in components)
     script_html = FEED_FILTER_SCRIPT if chip_html else ""
