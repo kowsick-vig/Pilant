@@ -1,0 +1,112 @@
+[
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "Show me what's relevant across Gmail and Jira.",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-08-31T22:56:32+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "just show me the highest priority stuff, as a compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-08-31T23:11:05+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "urgent/high-priority items across both",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-08-31T23:19:58+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "unread/flagged emails and high priority jira, compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-01T21:07:22+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "unread/flagged emails and high priority jira, compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-01T21:10:05+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "unread/flagged emails and high priority jira, compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-01T21:20:15+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "unread/flagged emails and high priority jira, compact list",
+    "component_types": [
+      "stat_grid",
+      "list"
+    ],
+    "at": "2026-09-01T21:21:18+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "unread/flagged emails and high priority jira, compact list",
+    "component_types": [
+      "stat_grid",
+      "list"
+    ],
+    "at": "2026-09-01T21:21:33+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-01T21:26:21+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-01T21:26:35+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "unread/flagged emails and high priority jira, compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-01T21:26:57+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "unread/flagged emails and high priority jira, compact list",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-01T21:27:15+00:00"
+  }
+]

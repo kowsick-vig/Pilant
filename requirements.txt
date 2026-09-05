@@ -1,0 +1,20 @@
+anthropic>=0.40.0
+openai>=1.50.0
+jsonschema>=4.20.0
+flask>=3.0.0
+# For rag_index.py's local knowledge base — the vector store behind the
+# search_knowledge_base tool every connector chat has
+# (agent_gmail.py/agent_slack.py/agent_github.py).
+chromadb>=0.5.0
+# Embeddings for the knowledge base above go through Amazon Bedrock (Titan
+# Text Embeddings V2), not OpenAI — see rag_index.py's module docstring for
+# why. Needs a boto3/botocore recent enough to auto-detect Bedrock's
+# bearer-token long-term API keys (AWS_BEARER_TOKEN_BEDROCK) from the
+# environment (added mid-2025); pin generous enough that most installs
+# already clear it, but `pip install --upgrade boto3` if auth still fails.
+boto3>=1.39.0
+# For agent_healthcare.py / connectors_healthcare.py — signs the JWT client
+# assertion Epic's backend OAuth2 flow requires. cryptography is PyJWT's
+# dependency for RS384 signing.
+pyjwt>=2.8.0
+cryptography>=42.0.0

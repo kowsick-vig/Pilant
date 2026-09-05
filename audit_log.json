@@ -1,0 +1,103 @@
+[
+  {
+    "id": "32b2619b1289",
+    "event_type": "approval_approved",
+    "actor": "kowsick",
+    "workspace_id": "ws_3c285ec890",
+    "details": {
+      "approval_id": "appr_72345ad6c3",
+      "title": "Escalate Acme Corp renewal"
+    },
+    "at": "2026-08-29T11:49:37+00:00"
+  },
+  {
+    "id": "67bdaf8389e4",
+    "event_type": "action_performed",
+    "actor": "kowsick",
+    "workspace_id": "ws_3c285ec890",
+    "details": {
+      "action_key": "assign_follow_up",
+      "primitive_id": "priority_queue",
+      "item_id": "pri_msg"
+    },
+    "at": "2026-08-29T11:49:37+00:00"
+  },
+  {
+    "id": "f216cae005dd",
+    "event_type": "workspace_note_added",
+    "actor": "kowsick",
+    "workspace_id": "ws_3c285ec890",
+    "details": {
+      "primitive_id": "does_not_exist",
+      "note": "test note"
+    },
+    "at": "2026-08-29T11:49:37+00:00"
+  },
+  {
+    "id": "a06406a6c955",
+    "event_type": "workspace_saved",
+    "actor": "kowsick",
+    "workspace_id": "ws_3c285ec890",
+    "details": {
+      "name": "My Attention Board"
+    },
+    "at": "2026-08-29T11:49:37+00:00"
+  },
+  {
+    "id": "15d5e282364f",
+    "event_type": "approval_approved",
+    "actor": "kowsick",
+    "workspace_id": "ws_51a08ca414",
+    "details": {
+      "approval_id": "appr_69ac0cb3d0",
+      "title": "Escalate Acme Corp renewal"
+    },
+    "at": "2026-08-29T11:52:15+00:00"
+  },
+  {
+    "id": "bcf81f708500",
+    "event_type": "workspace_saved",
+    "actor": "kowsick",
+    "workspace_id": "ws_7ac296e54a",
+    "details": {
+      "name": "My Board"
+    },
+    "at": "2026-08-29T11:52:15+00:00"
+  },
+  {
+    "id": "a1782d748404",
+    "event_type": "workspace_regenerated",
+    "actor": "kowsick",
+    "workspace_id": "ws_7ac296e54a",
+    "details": {},
+    "at": "2026-08-29T11:52:15+00:00"
+  },
+  {
+    "id": "4302d584d12e",
+    "event_type": "workspace_restored",
+    "actor": "kowsick",
+    "workspace_id": "ws_7ac296e54a",
+    "details": {
+      "version": 1
+    },
+    "at": "2026-08-29T11:52:15+00:00"
+  },
+  {
+    "id": "72212110376b",
+    "event_type": "workspace_saved",
+    "actor": "kowsick",
+    "workspace_id": "ws_17eb755834",
+    "details": {
+      "name": "Publishable"
+    },
+    "at": "2026-08-29T11:52:15+00:00"
+  },
+  {
+    "id": "a24ae848fd31",
+    "event_type": "workspace_published",
+    "actor": "kowsick",
+    "workspace_id": "ws_17eb755834",
+    "details": {},
+    "at": "2026-08-29T11:52:15+00:00"
+  }
+]

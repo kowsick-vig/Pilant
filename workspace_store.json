@@ -1,0 +1,59 @@
+{
+  "kowsick": [
+    {
+      "id": "ws_3c285ec890",
+      "name": "My Attention Board",
+      "owner": "kowsick",
+      "created_at": "2026-08-29T11:49:37+00:00",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "goal": "Show everything requiring my attention today.",
+          "role": "sales_manager",
+          "title": "Today's attention",
+          "created_at": "2026-08-29T11:49:37+00:00"
+        }
+      ]
+    },
+    {
+      "id": "ws_7ac296e54a",
+      "name": "Renamed Board",
+      "owner": "kowsick",
+      "created_at": "2026-08-29T11:52:15+00:00",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "goal": "Show what needs attention",
+          "role": "sales_rep",
+          "title": "Today's attention",
+          "created_at": "2026-08-29T11:52:15+00:00"
+        },
+        {
+          "version": 2,
+          "goal": "Show what needs attention",
+          "role": "sales_rep",
+          "title": "Today's attention",
+          "created_at": "2026-08-29T11:52:15+00:00"
+        }
+      ]
+    },
+    {
+      "id": "ws_17eb755834",
+      "name": "Publishable",
+      "owner": "kowsick",
+      "created_at": "2026-08-29T11:52:15+00:00",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "goal": "Show what needs attention",
+          "role": "sales_rep",
+          "title": "Today's attention",
+          "created_at": "2026-08-29T11:52:15+00:00"
+        }
+      ]
+    }
+  ]
+}

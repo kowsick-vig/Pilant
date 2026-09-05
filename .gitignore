@@ -1,0 +1,12 @@
+.env
+__pycache__/
+venv/
+*.pyc
+output.html
+output_test.html
+.pytest_cache/
+.DS_Store
+
+# Local RAG knowledge base (rag_index.py) — regenerable from live connector
+# data via rag_ingest.py, and grows large; never something to commit.
+rag_store/
