@@ -319,7 +319,7 @@ def _list_title_html(title, connector_links, connector_colors=None):
     return f'<p class="panel-sub" style="margin-bottom:10px;">{dot_html}{esc_title}</p>'
 
 
-def _component_html(c, connector_links=None, connector_colors=None, jira_detail_base=None):
+def _component_html(c, connector_links=None, connector_colors=None, jira_detail_base=None, jira_only=False):
     ctype = c.get("type")
 
     if ctype == "stat_grid":
@@ -358,7 +358,19 @@ def _component_html(c, connector_links=None, connector_colors=None, jira_detail_
         # detail view — reusing the row schema's existing optional 'url'
         # field (see _list_row_html) rather than inventing a second link
         # mechanism. Never overwrites a url the model already set itself.
-        if title and jira_detail_base and "jira" in title.lower():
+        # jira_only (added 2026-09-06, fixing a real gap found live: a
+        # single-app Jira workflow's own render_view often leaves the list
+        # untitled, or titles it something like "Priya's In-Progress
+        # Issues" — no "jira" substring — since titling it "Jira" again on
+        # an already-Jira-only screen is redundant. That silently starved
+        # every row of the detail-panel link below, even though every row
+        # unambiguously IS a Jira issue. studio.py now passes jira_only=True
+        # whenever the whole workflow IS the "jira" connector, bypassing
+        # the title heuristic entirely; the title check remains as a
+        # fallback for the "unified" connector's merged screens, where a
+        # list's title is what distinguishes its Jira section from a
+        # Gmail/Slack one.
+        if jira_detail_base and (jira_only or (title and "jira" in title.lower())):
             linked_rows = []
             for r in row_items:
                 if isinstance(r, dict) and not r.get("url") and isinstance(r.get("name"), str):
@@ -419,7 +431,19 @@ def _component_html(c, connector_links=None, connector_colors=None, jira_detail_
         # agent_jira.py's own prompt guidance) but never got a working
         # detail-panel link. Kept as an exact mirror rather than a shared
         # helper so each branch's row-shape stays visibly self-contained.
-        if title and jira_detail_base and "jira" in title.lower():
+        # jira_only (added 2026-09-06, fixing a real gap found live: a
+        # single-app Jira workflow's own render_view often leaves the list
+        # untitled, or titles it something like "Priya's In-Progress
+        # Issues" — no "jira" substring — since titling it "Jira" again on
+        # an already-Jira-only screen is redundant. That silently starved
+        # every row of the detail-panel link below, even though every row
+        # unambiguously IS a Jira issue. studio.py now passes jira_only=True
+        # whenever the whole workflow IS the "jira" connector, bypassing
+        # the title heuristic entirely; the title check remains as a
+        # fallback for the "unified" connector's merged screens, where a
+        # list's title is what distinguishes its Jira section from a
+        # Gmail/Slack one.
+        if jira_detail_base and (jira_only or (title and "jira" in title.lower())):
             linked_rows = []
             for r in row_items:
                 if isinstance(r, dict) and not r.get("url") and isinstance(r.get("name"), str):
@@ -557,7 +581,19 @@ def _component_html(c, connector_links=None, connector_colors=None, jira_detail_
         # Same Jira detail-panel row-linking as "list"/"timeline" above —
         # added 2026-09-05 for the same reason: task_queue is a real,
         # encouraged choice for Jira-titled "what's overdue" screens.
-        if title and jira_detail_base and "jira" in title.lower():
+        # jira_only (added 2026-09-06, fixing a real gap found live: a
+        # single-app Jira workflow's own render_view often leaves the list
+        # untitled, or titles it something like "Priya's In-Progress
+        # Issues" — no "jira" substring — since titling it "Jira" again on
+        # an already-Jira-only screen is redundant. That silently starved
+        # every row of the detail-panel link below, even though every row
+        # unambiguously IS a Jira issue. studio.py now passes jira_only=True
+        # whenever the whole workflow IS the "jira" connector, bypassing
+        # the title heuristic entirely; the title check remains as a
+        # fallback for the "unified" connector's merged screens, where a
+        # list's title is what distinguishes its Jira section from a
+        # Gmail/Slack one.
+        if jira_detail_base and (jira_only or (title and "jira" in title.lower())):
             linked_rows = []
             for r in row_items:
                 if isinstance(r, dict) and not r.get("url") and isinstance(r.get("name"), str):
@@ -1157,7 +1193,7 @@ FEED_FILTER_SCRIPT = (
 )
 
 
-def _render_body(view, connector_links=None, connector_colors=None, jira_detail_base=None):
+def _render_body(view, connector_links=None, connector_colors=None, jira_detail_base=None, jira_only=False):
     """Shared by render_fragment() and render_html(): heading + meta + an
     optional filter-chip bar (only when 2+ titled list components make one
     meaningful) + every component. Factored out 2026-09-01 so both entry
@@ -1172,12 +1208,12 @@ def _render_body(view, connector_links=None, connector_colors=None, jira_detail_
     # data-src/feed-block wrapping), so they're equally valid chip targets.
     titled_lists = [c for c in components if c.get("type") in ("list", "timeline", "task_queue") and c.get("title")]
     chip_html = _filter_chip_bar_html(titled_lists, connector_colors) if len(titled_lists) >= 2 else ""
-    components_html = "".join(_component_html(c, connector_links, connector_colors, jira_detail_base) for c in components)
+    components_html = "".join(_component_html(c, connector_links, connector_colors, jira_detail_base, jira_only) for c in components)
     script_html = FEED_FILTER_SCRIPT if chip_html else ""
     return f'<h2 class="app-h1">{heading}</h2>{meta_html}{chip_html}{components_html}{script_html}'
 
 
-def render_fragment(view, connector_links=None, connector_colors=None, jira_detail_base=None):
+def render_fragment(view, connector_links=None, connector_colors=None, jira_detail_base=None, jira_only=False):
     """
     Same component rendering as render_html(), but returns only the inner
     content (heading + meta + components) — no <html> shell, no CSS, no
@@ -1196,13 +1232,23 @@ def render_fragment(view, connector_links=None, connector_colors=None, jira_deta
     None (the default) means Jira rows render exactly as before this
     existed, with no detail-panel link.
 
+    jira_only: added 2026-09-06 — pass True when the WHOLE screen belongs
+    to the "jira" connector (studio.py does this for that workflow's own
+    live preview), so every list/timeline/task_queue row gets the
+    detail-panel link regardless of whether the list happens to be titled
+    "Jira" — see _component_html's list-branch docstring for the gap this
+    fixes. False (the default) keeps the old title-based heuristic only,
+    unchanged for every other caller (including the "unified" connector's
+    merged multi-app screens, where the title IS what tells a Jira section
+    apart from a Gmail/Slack one).
+
     connector_colors: optional {lowercased connector label: {"bg","fg"}} map
     — see _connector_color's docstring. Drives the small source-color dot
     next to a titled list's heading/chip, and (with 2+ titled lists) the
     filter-chip bar above them. None (the default) renders exactly as
     before this existed.
     """
-    return _render_body(view, connector_links, connector_colors, jira_detail_base)
+    return _render_body(view, connector_links, connector_colors, jira_detail_base, jira_only)
 
 
 def _chat_inline_component_html(c, max_rows=3):

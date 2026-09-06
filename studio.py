@@ -1593,6 +1593,15 @@ def _preview_html(wf, panel_folder="inbox", panel_message=None, jira_detail=None
     fragment = render_fragment(
         wf["last_render"], connector_links=_CONNECTOR_LINKS_BY_LABEL, connector_colors=_CONNECTOR_COLORS_BY_LABEL,
         jira_detail_base="/studio?jira_detail=",
+        # Added 2026-09-06, fixing a real "how do I navigate from here?"
+        # gap: a single-app Jira workflow's own render often leaves its
+        # list untitled (or titled something like "Priya's In-Progress
+        # Issues" with no "jira" substring), which used to silently starve
+        # every row of its detail-panel link — see render_fragment's
+        # jira_only docstring. Every row on a Jira-connector workflow's
+        # preview unambiguously IS a Jira issue, so bypass the title
+        # heuristic entirely here.
+        jira_only=(wf["connector"] == "jira"),
     )
     return (
         '<p class="preview-label">Live preview</p>'
