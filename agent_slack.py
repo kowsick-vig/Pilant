@@ -401,17 +401,36 @@ def _make_dispatch(seed_fetched_data, verbose, first_turn=False):
 
         return ce.ToolOutcome(tool_result="unknown tool")
 
+    # Exposed so run_agent can build a no-tool-call handler that knows
+    # whether real data was actually fetched this turn — see
+    # _make_on_no_tool_call's docstring.
+    dispatch.state = state
     return dispatch
 
 
-def _on_no_tool_call(text, stop_reason):
-    """A genuine plain-text reply is a normal, expected outcome for this connector (small
-    talk, thanks, "what's new?") — see SYSTEM's own instruction to reply in plain text for
-    non-data-request messages, and force_tool_choice=False below which lets Claude actually
-    choose to do this."""
-    if text:
-        return ce.ToolOutcome(final={"text": text})
-    return None
+RENDER_DONT_NARRATE_NUDGE = (
+    "You already fetched real data this turn but stopped with a plain-text reply instead of "
+    "calling render_view — that's not allowed once real data is in hand (see the "
+    "render_dont_narrate guidance above). Call render_view now with a real screen built from "
+    "what you actually fetched. If part of the request doesn't fit cleanly, note that in the "
+    "screen's 'meta' field, but still render whatever real findings you do have."
+)
+
+
+def _make_on_no_tool_call(state):
+    """Builds run_agent's on_no_tool_call callback, closed over this call's own dispatch
+    state (see _make_dispatch's `dispatch.state` above). See agent_gmail.py's copy of this
+    function for the full reasoning — a plain-text reply is fine for real small talk, but not
+    once state['fetched_data'] is True (a real fetch actually succeeded THIS turn), which
+    would be the same 'narrate instead of render' bug found live in agent_unified.py
+    2026-09-06 (reproduced there 5/5 in testing)."""
+    def _on_no_tool_call(text, stop_reason):
+        if text and state["fetched_data"]:
+            return ce.ToolOutcome(tool_result=RENDER_DONT_NARRATE_NUDGE)
+        if text:
+            return ce.ToolOutcome(final={"text": text})
+        return None
+    return _on_no_tool_call
 
 
 def run_agent(user_request=None, max_steps=8, verbose=True, messages=None, fetched_data=False, first_turn=False, extra_system=""):
@@ -429,7 +448,7 @@ def run_agent(user_request=None, max_steps=8, verbose=True, messages=None, fetch
         messages=messages,
         user_request=user_request,
         fetched_data=fetched_data,
-        on_no_tool_call=_on_no_tool_call,
+        on_no_tool_call=_make_on_no_tool_call(dispatch.state),
         force_tool_choice=False,
     )
 

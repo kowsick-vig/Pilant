@@ -448,6 +448,14 @@ NO_DATA_YET_NUDGE = (
     "this conversation, so you have no real data to show. Fetch first, then render_view."
 )
 
+RENDER_DONT_NARRATE_NUDGE = (
+    "You already fetched real data this turn but stopped with a plain-text reply instead of "
+    "calling render_view — that's not allowed once real data is in hand (see the "
+    "render_dont_narrate guidance in this prompt). Call render_view now with a real screen "
+    "built from what you actually fetched. If part of the request doesn't fit cleanly, note "
+    "that in the screen's 'meta' field, but still render whatever real findings you do have."
+)
+
 
 def _make_dispatch(status, seed_fetched_data, verbose, first_turn=False):
     """first_turn: see agent_helpdesk.py's/agent_jira.py's copy of this
@@ -577,17 +585,39 @@ def _make_dispatch(status, seed_fetched_data, verbose, first_turn=False):
 
         return ce.ToolOutcome(tool_result="unknown tool")
 
+    # Exposed so run_agent can build a no-tool-call handler that knows
+    # whether real data was actually fetched this turn — see
+    # _make_on_no_tool_call's docstring for why that check matters.
+    dispatch.state = state
     return dispatch
 
 
-def _on_no_tool_call(text, stop_reason):
-    """A plain-text reply is a normal, expected outcome here — both for real
-    small talk AND for the 'nothing relevant is connected' case the system
-    prompt asks the model to handle this way. See run_agent's
-    force_tool_choice=False below."""
-    if text:
-        return ce.ToolOutcome(final={"text": text})
-    return None
+def _make_on_no_tool_call(state):
+    """Builds run_agent's on_no_tool_call callback, closed over this call's
+    own dispatch state (see _make_dispatch's `dispatch.state` above).
+
+    A plain-text reply is a normal, expected outcome here for two things —
+    real small talk, and the 'nothing relevant is connected' case the
+    system prompt asks the model to handle this way — but NEITHER of those
+    is possible once state['fetched_data'] is True, since that only ever
+    flips True right after a real fetch tool call actually returned real
+    data THIS turn (see the fetchers branch in _make_dispatch above — the
+    'not connected' and 'fetch failed' branches never set it). A plain-text
+    stop after that point is exactly the 'narrate instead of render' bug
+    found live 2026-09-06 (a follow-up like 'how many DES issues are
+    blocked' correctly fetching the real count, then answering it in
+    unchecked chat prose instead of a guardrail-checked render_view call —
+    reproduced 5/5 in testing). So: once real data has been fetched this
+    turn, refuse a plain-text stop and nudge the model to render_view
+    instead; only accept plain text as final when nothing was ever
+    successfully fetched this turn at all."""
+    def _on_no_tool_call(text, stop_reason):
+        if text and state["fetched_data"]:
+            return ce.ToolOutcome(tool_result=RENDER_DONT_NARRATE_NUDGE)
+        if text:
+            return ce.ToolOutcome(final={"text": text})
+        return None
+    return _on_no_tool_call
 
 
 def system_snapshot():
@@ -628,7 +658,7 @@ def run_agent(user_request=None, max_steps=10, verbose=True, messages=None, fetc
         messages=messages,
         user_request=user_request,
         fetched_data=fetched_data,
-        on_no_tool_call=_on_no_tool_call,
+        on_no_tool_call=_make_on_no_tool_call(dispatch.state),
         force_tool_choice=False,
     )
 
