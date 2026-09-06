@@ -368,6 +368,14 @@ def _build_system(status, first_turn=False, extra_system=""):
         "ticket, and never write placeholder text like 'Subject' or 'Message 1' as a value. If "
         "you're not looking at a real string a tool returned, don't write it. A filtered query "
         "coming back with few results or none is normal — render that honestly.\n\n"
+        "One exception to needing fetched data first: a request that's purely about "
+        "connectivity/integration status ('what's connected right now', 'which apps need "
+        "reconnecting', 'is Jira connected') needs NO fetch tool call at all — go straight to "
+        "render_view with a 'connection_state' screen. The connection status listed above in "
+        "this prompt is already real, current ground truth, not something any fetch tool would "
+        "ever return. This exception only applies when EVERY component in the view is "
+        "'connection_state' — a screen mixing it with anything else still needs real fetched "
+        "data from a tool call as normal.\n\n"
         "If the message isn't a data request at all (a greeting, thanks, small talk, a question "
         "about what you can do), don't call any tool — just reply normally in plain text.\n\n"
         + load_skill("render_dont_narrate") + "\n\n" +
@@ -533,7 +541,23 @@ def _make_dispatch(status, seed_fetched_data, verbose, first_turn=False):
         if name == "render_view":
             if first_turn:
                 return ce.ToolOutcome(tool_result=FIRST_TURN_GATE_NUDGE)
-            if not state["fetched_data"]:
+            # connection_state exception, added 2026-09-06 after a real test
+            # caught this: a pure "what's connected right now?" request needs
+            # NO fetch tool call at all — connection status is already real,
+            # known ground truth baked into this SYSTEM prompt's status block
+            # (_connection_status() above), not something any app's fetch
+            # tool would ever return. The fetched_data gate below exists to
+            # stop a screen being built before anything real has been
+            # fetched — that reasoning doesn't apply when EVERY component is
+            # connection_state, since there's nothing to fetch in the first
+            # place. A view mixing connection_state with anything else still
+            # requires real fetched_data as normal.
+            view_components = args.get("components") if isinstance(args, dict) else None
+            is_pure_connection_state = bool(view_components) and all(
+                isinstance(comp, dict) and comp.get("type") == "connection_state"
+                for comp in view_components
+            )
+            if not state["fetched_data"] and not is_pure_connection_state:
                 return ce.ToolOutcome(tool_result=NO_DATA_YET_NUDGE)
             problem = validate_view(args, UI_SCHEMA)
             if problem is not None:

@@ -354,27 +354,46 @@ def find_ungrounded_suggestion_facts(view, messages):
     return [b for b in bad if not (b in seen or seen.add(b))]
 
 
+_CLAIM_BEARING_TYPES = {"alert", "status_badge", "empty_state", "error_state"}
+
+
 def find_ungrounded_alert_claims(view, messages):
     """
     Sibling of find_ungrounded_suggestion_facts, scoped to schema.py's
-    2026-09-05 "alert" component type. An alert's title/subtitle is
-    freeform prose synthesizing a real condition ("3 issues are blocked
-    and overdue") rather than a copied field value — the exact shape of
-    claim find_ungrounded_suggestion_facts already exists to police for
-    suggestions, so this reuses the same narrow "financial-looking figure"
-    trigger and the same per-token (not whole-sentence) check, for the
-    same reason: most of an alert sentence's words are the model's own
-    connective prose and would false-positive against raw fetched JSON if
-    checked as a whole string.
+    2026-09-05 "alert" component type, and — as of 2026-09-06's round-3
+    types — three more that share the exact same shape of risk:
+    status_badge, empty_state, and error_state. All four carry freeform
+    title/subtitle prose synthesizing a real condition ("3 issues are
+    blocked and overdue", "No blocked issues right now", "Gmail isn't
+    accessible right now") rather than a copied field value — the exact
+    shape of claim find_ungrounded_suggestion_facts already exists to
+    police for suggestions, so this reuses the same narrow "financial-
+    looking figure" trigger and the same per-token (not whole-sentence)
+    check, for the same reason: most of a claim sentence's words are the
+    model's own connective prose and would false-positive against raw
+    fetched JSON if checked as a whole string. Kept as one function
+    (rather than four near-duplicates) since all four types pose
+    identically-shaped risk — only _CLAIM_BEARING_TYPES needs to grow if
+    a future type adds the same kind of freeform claim.
+
+    Also scans comp['badge']['text'] for these same types — added after a
+    test caught a real gap: status_badge's docstring in schema.py says the
+    badge IS the status claim itself (e.g. badge.text could read "$9,999
+    overdue"), not just supporting decoration the way a badge attached to
+    a list row is. Checking only title/subtitle would have let a
+    fabricated figure hide in the one field most likely to carry it for
+    this type.
     """
     tool_results = extract_tool_results(messages)
     records = records_from_tool_results(tool_results)
 
     bad = []
     for comp in (view.get("components") or []):
-        if not isinstance(comp, dict) or comp.get("type") != "alert":
+        if not isinstance(comp, dict) or comp.get("type") not in _CLAIM_BEARING_TYPES:
             continue
-        for text in (comp.get("title"), comp.get("subtitle")):
+        badge = comp.get("badge")
+        badge_text = badge.get("text") if isinstance(badge, dict) else None
+        for text in (comp.get("title"), comp.get("subtitle"), badge_text):
             if not isinstance(text, str):
                 continue
             for token in _CURRENCY_TOKEN_RE.findall(text):

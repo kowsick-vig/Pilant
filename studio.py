@@ -2464,6 +2464,23 @@ def _render_memory_line(render):
             parts.append("an alert banner")
         elif t == "task_queue":
             parts.append(f"a task queue of {len(comp.get('rows') or [])} item(s)")
+        # 2026-09-06 (round 3): same reasoning as the block above — these 7
+        # new types were falling through to "a screen with no components"
+        # whenever one was the only thing on a screen.
+        elif t == "detail_view":
+            parts.append(f"a detail view of \"{comp.get('title') or 'one record'}\"")
+        elif t == "status_badge":
+            parts.append(f"a status badge ({comp.get('title')})" if comp.get('title') else "a status badge")
+        elif t == "empty_state":
+            parts.append(f"an empty-state note (\"{comp.get('title')}\")" if comp.get('title') else "an empty-state note")
+        elif t == "error_state":
+            parts.append(f"an error card (\"{comp.get('title')}\")" if comp.get('title') else "an error card")
+        elif t == "connection_state":
+            parts.append(f"a connection-status row of {len(comp.get('stats') or [])} app(s)")
+        elif t == "pagination":
+            parts.append("a pagination status line")
+        elif t == "popover":
+            parts.append(f"a popover (\"{comp.get('title')}\")" if comp.get('title') else "a popover")
     body = ", ".join(parts) if parts else "a screen with no components"
     return f'Built "{heading}" — {body}.'
 

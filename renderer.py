@@ -25,7 +25,25 @@ def _badge(b):
     if not b:
         return ""
     tone = _esc(b.get("tone", "default"))
-    return f'<span class="badge {tone}">{_esc(b.get("text", ""))}</span>'
+    # hint: added 2026-09-06 (round 3) — an OPTIONAL explanatory hover tooltip
+    # (schema.py's badge.hint), rendered as a native title="" attribute so it
+    # needs no JS. Every existing caller that never sets hint gets an
+    # identical badge to before this existed.
+    hint = b.get("hint")
+    title_attr = f' title="{_esc(hint)}"' if hint else ""
+    return f'<span class="badge {tone}"{title_attr}>{_esc(b.get("text", ""))}</span>'
+
+
+def _field_kv_html(f):
+    """Shared by panel and detail_view (round 3) — a single fields[] entry
+    as a <dt>/<dd> pair, honoring the same optional 'hint' hover tooltip
+    _badge() supports (schema.py's fields[].hint), via a native title=""
+    attribute on the label so it needs no JS."""
+    if not isinstance(f, dict):
+        return ""
+    hint = f.get("hint")
+    label_attr = f' title="{_esc(hint)}"' if hint else ""
+    return f'<div><dt{label_attr}>{_esc(f.get("label"))}</dt><dd>{_esc(f.get("value"))}</dd></div>'
 
 
 _LEADING_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
@@ -315,8 +333,7 @@ def _component_html(c, connector_links=None, connector_colors=None, jira_detail_
 
     if ctype == "panel":
         fields = "".join(
-            f'<div><dt>{_esc(f.get("label"))}</dt><dd>{_esc(f.get("value"))}</dd></div>'
-            for f in c.get("fields", [])
+            _field_kv_html(f) for f in c.get("fields", [])
         )
         fields_html = f'<dl class="kv-grid">{fields}</dl>' if fields else ""
         action_html = f'<button class="app-btn">{_esc(c["action"])}</button>' if c.get("action") else ""
@@ -581,6 +598,123 @@ def _component_html(c, connector_links=None, connector_colors=None, jira_detail_
             return f'<div class="panel feed-block" data-src="{_esc(_slugify(title))}">{body}</div>'
         return f'<div class="panel">{body}</div>'
 
+    if ctype == "detail_view":
+        # Added 2026-09-06 (round 3). Reuses the exact same title/subtitle/
+        # badge/fields/action shape as "panel" — see schema.py's docstring —
+        # so this is a visual-weight variant, not a new data shape: already
+        # covered by guardrails.find_fabricated_content's existing fields
+        # loop. Bigger heading, breathing room, and a 2-column field grid
+        # (vs. panel's tighter kv-grid) for when the ENTIRE request is one
+        # record's own deep-dive, not a supporting detail box.
+        fields = "".join(_field_kv_html(f) for f in c.get("fields", []))
+        fields_html = f'<dl class="detail-grid">{fields}</dl>' if fields else ""
+        action_html = f'<button class="app-btn">{_esc(c["action"])}</button>' if c.get("action") else ""
+        subtitle_html = f'<p class="detail-sub">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        return (
+            f'<div class="detail-view"><div class="detail-head"><div>'
+            f'<p class="detail-title">{_esc(c.get("title"))}</p>{subtitle_html}'
+            f'</div>{_badge(c.get("badge"))}</div>{fields_html}{action_html}</div>'
+        )
+
+    if ctype == "status_badge":
+        # Added 2026-09-06 (round 3). Reuses "title"/"badge" verbatim — a
+        # quiet, single-line status indicator, deliberately NOT styled as
+        # an urgent banner the way "alert" is (see schema.py). Covered by
+        # guardrails.find_ungrounded_alert_claims (broadened this round to
+        # include status_badge alongside alert).
+        return (
+            '<div class="status-badge-row">'
+            f'<span class="status-badge-label">{_esc(c.get("title"))}</span>'
+            f'{_badge(c.get("badge"))}'
+            '</div>'
+        )
+
+    if ctype == "empty_state":
+        # Added 2026-09-06 (round 3). Reuses "title"/"subtitle" — the
+        # deliberate, explicit way to render "nothing matched, and that's
+        # the real answer" as its own screen-level component, instead of
+        # leaving a genuine zero result to an empty list's fallback message
+        # or (far worse) a plain-text chat reply no guardrail ever checks —
+        # see skills/render_dont_narrate.md. Covered by
+        # guardrails.find_ungrounded_alert_claims (broadened this round).
+        subtitle_html = f'<p class="empty-state-sub">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        return (
+            '<div class="empty-state">'
+            f'<p class="empty-state-title">{_esc(c.get("title"))}</p>{subtitle_html}'
+            '</div>'
+        )
+
+    if ctype == "error_state":
+        # Added 2026-09-06 (round 3). Reuses "title"/"subtitle"/"badge"/
+        # "action" — a structured, visible card for "this data source
+        # failed" as part of the rendered screen itself (alongside
+        # whichever other sources DID work), rather than only ever a
+        # one-line 'meta' note. Covered by guardrails.
+        # find_ungrounded_alert_claims (broadened this round). 'action', if
+        # set, is the same decorative (non-wired) button every other
+        # component's 'action' field already renders — a real "Reconnect"
+        # click-through is separate future work, not promised here.
+        subtitle_html = f'<p class="error-state-sub">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        action_html = f'<button class="app-btn">{_esc(c["action"])}</button>' if c.get("action") else ""
+        return (
+            '<div class="error-state"><div class="error-state-head"><div>'
+            f'<p class="error-state-title">{_esc(c.get("title"))}</p>{subtitle_html}'
+            f'</div>{_badge(c.get("badge") or {"text": "Error", "tone": "critical"})}</div>{action_html}</div>'
+        )
+
+    if ctype == "connection_state":
+        # Added 2026-09-06 (round 3). Reuses "stats" verbatim (label/value/
+        # tone) — a fourth consumer alongside stat_grid/metric/chart —
+        # rendered as a row of small status pills (a check/x-style
+        # indicator + short status string) rather than stat_grid's
+        # big-number card treatment, since a connection state is a short
+        # word ("Connected"), not a number to emphasize. Already covered by
+        # guardrails.find_fabricated_stats, which scans any component's
+        # "stats" array regardless of type.
+        pills = "".join(
+            f'<div class="connection-pill tone-{_esc(s.get("tone", "default"))}">'
+            f'<span class="connection-pill-label">{_esc(s.get("label"))}</span>'
+            f'<span class="connection-pill-value">{_esc(s.get("value"))}</span></div>'
+            for s in c.get("stats", []) if isinstance(s, dict)
+        )
+        return f'<div class="connection-state">{pills}</div>'
+
+    if ctype == "pagination":
+        # Added 2026-09-06 (round 3). The one genuinely new shape this
+        # round — 'page'/'total_pages'/'total_count' (schema.py). Ships as
+        # a real-data DISPLAY primitive now; no connector currently returns
+        # pagination metadata (get_issues/get_tickets/get_gmail_messages
+        # have no offset/cursor support yet), so this deliberately renders
+        # as plain status text, not a fake clickable prev/next control —
+        # a control that looked interactive but silently did nothing would
+        # be worse than no control at all. Wiring a real "fetch page 2"
+        # flow per connector is separate, later work.
+        page = c.get("page")
+        total_pages = c.get("total_pages")
+        total_count = c.get("total_count")
+        parts = []
+        if page is not None and total_pages is not None:
+            parts.append(f"Page {int(page)} of {int(total_pages)}")
+        if total_count is not None:
+            parts.append(f"{int(total_count)} total")
+        text = " · ".join(parts) if parts else "Page information unavailable"
+        return f'<div class="pagination-status">{_esc(text)}</div>'
+
+    if ctype == "popover":
+        # Added 2026-09-06 (round 3). Reuses "title" (the trigger/summary
+        # label) + "fields" (the content revealed on click) — rendered with
+        # a native HTML <details>/<summary> disclosure, so it needs no
+        # JavaScript at all. Already covered by guardrails.
+        # find_fabricated_content's existing fields loop.
+        fields = "".join(_field_kv_html(f) for f in c.get("fields", []))
+        fields_html = f'<dl class="popover-grid">{fields}</dl>' if fields else ""
+        return (
+            '<details class="popover">'
+            f'<summary class="popover-trigger">{_esc(c.get("title"))}</summary>'
+            f'<div class="popover-body">{fields_html}</div>'
+            '</details>'
+        )
+
     return f'<div class="panel"><p class="panel-sub">Unknown component type: {_esc(ctype)}</p></div>'
 
 
@@ -691,6 +825,39 @@ body { margin:0; background:var(--ground); color:var(--text); font-family:'IBM P
 .task-body { flex:1; }
 .task-name { font-weight:600; font-size:.88rem; }
 .task-note { font-size:.78rem; color:var(--app-muted); margin-top:2px; }
+.detail-view { background:var(--app-card); border:1px solid var(--app-border); border-radius:12px; padding:22px 24px; margin-bottom:16px; box-shadow:0 1px 2px rgba(23,27,46,.05), 0 1px 1px rgba(23,27,46,.04); }
+.detail-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px; }
+.detail-title { font-family:'Sora',sans-serif; font-weight:700; font-size:1.2rem; margin:0 0 4px; }
+.detail-sub { font-size:.85rem; color:var(--app-muted); margin:0; }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px 28px; margin:16px 0 0; }
+.detail-grid dt { font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:var(--app-muted); font-family:'IBM Plex Mono',monospace; margin-bottom:3px; }
+.detail-grid dd { margin:0; font-size:.92rem; }
+.status-badge-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid var(--app-border); }
+.status-badge-label { font-size:.85rem; color:var(--app-text); }
+.empty-state { text-align:center; padding:28px 20px; color:var(--app-muted); }
+.empty-state-title { font-size:.92rem; font-weight:600; color:var(--app-text); margin:0 0 4px; }
+.empty-state-sub { font-size:.8rem; margin:0; }
+.error-state { background:var(--app-critical-bg); border:1px solid var(--app-critical); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+.error-state-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.error-state-title { font-family:'Sora',sans-serif; font-weight:600; font-size:.92rem; color:var(--app-critical); margin:0 0 3px; }
+.error-state-sub { font-size:.8rem; color:var(--app-text); margin:0; opacity:.85; }
+.connection-state { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.connection-pill { display:flex; align-items:center; gap:6px; background:var(--app-card); border:1px solid var(--app-border); border-radius:999px; padding:6px 12px; font-size:.78rem; }
+.connection-pill-label { color:var(--app-muted); }
+.connection-pill-value { font-weight:600; }
+.connection-pill.tone-good .connection-pill-value { color:var(--app-good); }
+.connection-pill.tone-critical .connection-pill-value { color:var(--app-critical); }
+.connection-pill.tone-warning .connection-pill-value { color:var(--app-warning); }
+.pagination-status { font-size:.78rem; color:var(--app-muted); font-family:'IBM Plex Mono',monospace; text-align:center; padding:10px 0; }
+.popover { border:1px solid var(--app-border); border-radius:10px; padding:4px 14px; margin-bottom:12px; background:var(--app-card); }
+.popover-trigger { cursor:pointer; font-size:.88rem; font-weight:600; padding:10px 0; list-style:none; }
+.popover-trigger::-webkit-details-marker { display:none; }
+.popover-trigger::before { content:"▸ "; color:var(--app-muted); }
+details[open] > .popover-trigger::before { content:"▾ "; }
+.popover-body { padding:0 0 14px; }
+.popover-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; margin:0; }
+.popover-grid dt { font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:var(--app-muted); font-family:'IBM Plex Mono',monospace; margin-bottom:2px; }
+.popover-grid dd { margin:0; font-size:.86rem; }
 """
 
 # Styling for render_gmail_fragment() above — as of 2026-08-26, deliberately
@@ -1178,6 +1345,57 @@ def _chat_inline_component_html(c, max_rows=3):
         more = len(rows) - len(shown)
         more_html = f'<p class="chat-result-more">+{more} more &mdash; see live preview</p>' if more > 0 else ""
         return f'{title_html}<ul class="chat-result-rows">{items}</ul>{more_html}'
+
+    if ctype == "detail_view":
+        # Same compact treatment as "panel" above — detail_view is a
+        # full-size visual variant only (see _component_html); a chat
+        # bubble has no room for the richer header/spacing anyway.
+        title_html = f'<p class="chat-result-name">{_esc(c.get("title"))}</p>' if c.get("title") else ""
+        fields = (c.get("fields") or [])[:max_rows]
+        items = "".join(
+            f'<li><span class="chat-result-note">{_esc(f.get("label"))}:</span> {_esc(f.get("value"))}</li>'
+            for f in fields
+        )
+        rows_html = f'<ul class="chat-result-rows">{items}</ul>' if items else ""
+        return f'{title_html}{rows_html}'
+
+    if ctype == "status_badge":
+        return f'<p class="chat-result-name">{_esc(c.get("title"))}</p><p class="chat-result-note">{_esc((c.get("badge") or {}).get("text", ""))}</p>'
+
+    if ctype == "empty_state":
+        subtitle_html = f'<p class="chat-result-note">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        return f'<p class="chat-result-name">{_esc(c.get("title"))}</p>{subtitle_html}'
+
+    if ctype == "error_state":
+        subtitle_html = f'<p class="chat-result-note">{_esc(c.get("subtitle"))}</p>' if c.get("subtitle") else ""
+        return f'<p class="chat-result-name">{_esc(c.get("title"))}</p>{subtitle_html}'
+
+    if ctype == "connection_state":
+        stats = (c.get("stats") or [])[:max_rows]
+        items = "".join(
+            f'<li><span class="chat-result-note">{_esc(s.get("label"))}:</span> {_esc(s.get("value"))}</li>'
+            for s in stats if isinstance(s, dict)
+        )
+        return f'<ul class="chat-result-rows">{items}</ul>' if items else ""
+
+    if ctype == "pagination":
+        page, total_pages, total_count = c.get("page"), c.get("total_pages"), c.get("total_count")
+        parts = []
+        if page is not None and total_pages is not None:
+            parts.append(f"Page {int(page)} of {int(total_pages)}")
+        if total_count is not None:
+            parts.append(f"{int(total_count)} total")
+        return f'<p class="chat-result-note">{_esc(" · ".join(parts))}</p>' if parts else ""
+
+    if ctype == "popover":
+        title_html = f'<p class="chat-result-name">{_esc(c.get("title"))}</p>' if c.get("title") else ""
+        fields = (c.get("fields") or [])[:max_rows]
+        items = "".join(
+            f'<li><span class="chat-result-note">{_esc(f.get("label"))}:</span> {_esc(f.get("value"))}</li>'
+            for f in fields
+        )
+        rows_html = f'<ul class="chat-result-rows">{items}</ul>' if items else ""
+        return f'{title_html}{rows_html}'
 
     return ""
 
