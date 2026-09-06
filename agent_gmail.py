@@ -213,6 +213,7 @@ SYSTEM = (
     "normally in plain text, like a helpful, friendly assistant would. There's nothing to fetch "
     "or render for a message like that. Keep these replies short and natural, and when it fits, "
     "mention you can pull up real inbox data if they want to see something specific.\n\n"
+    + load_skill("render_dont_narrate") + "\n\n" +
     "Only call ask_user first if a genuine data request is ambiguous in a way that would change "
     "what you'd fetch — and only once. After the person answers, proceed straight to "
     "get_gmail_messages and render_view; do not ask a second question in the same request, and "

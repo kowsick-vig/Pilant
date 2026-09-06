@@ -59,7 +59,16 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "project": {"type": "string", "enum": ["ENG", "DES"]},
-                "status": {"type": "string", "enum": ["To Do", "In Progress", "In Review", "Blocked", "Done"]},
+                "status": {
+                    "anyOf": [
+                        {"type": "string", "enum": ["To Do", "In Progress", "In Review", "Blocked", "Done"]},
+                        {
+                            "type": "array",
+                            "description": "Use this when the request implies more than one status, e.g. [\"To Do\", \"In Progress\", \"Blocked\"] for 'not done yet'/'still open'.",
+                            "items": {"type": "string", "enum": ["To Do", "In Progress", "In Review", "Blocked", "Done"]},
+                        },
+                    ]
+                },
                 "priority": {
                     "anyOf": [
                         {"type": "string", "enum": ["Lowest", "Low", "Medium", "High", "Highest"]},
@@ -123,6 +132,13 @@ SYSTEM = (
     "get_issues call. Do not arbitrarily pick just one of the levels the person meant and "
     "do not call get_issues twice to cover them separately; the array form exists exactly "
     "so a single call can cover a broad priority request completely.\n\n"
+    "Status filtering works the same way: when a request implies more than one status — "
+    "'what's not done yet'/'still open' means To Do AND In Progress AND Blocked, for "
+    "instance — pass the status argument as an array covering all of them (e.g. "
+    "[\"To Do\", \"In Progress\", \"Blocked\"]) in that ONE get_issues call. Never invent a "
+    "single combined string like \"To Do, In Progress\" or a JSON-looking value as a "
+    "workaround — status only ever matches a real array of the exact enum values, nothing "
+    "else.\n\n"
     "The real Jira this is standing in for crams project, type, status, priority, assignee, "
     "reporter, sprint, epic, story points, labels, components, fix version, due date, watcher "
     "count, and comment count onto every single issue row, all at once — that density is "

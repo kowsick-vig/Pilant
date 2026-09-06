@@ -198,21 +198,32 @@ TOOLS = [
             "Fetch Jira-style issues from the connected Jira (always connected — this is a "
             "demo data source with no setup required, covering two projects: ENG and DES). "
             "Optionally filtered by project (ENG/DES), status (To Do/In Progress/In Review/"
-            "Blocked/Done), priority (Lowest/Low/Medium/High/Highest — pass an ARRAY of these "
-            "when the request implies more than one level, e.g. [\"High\", \"Highest\"] for a "
-            "broad 'urgent'/'high priority' request, in ONE call rather than picking just one "
-            "or fetching twice), issue_type (Story/Bug/Task/Epic/Sub-task), sprint (e.g. "
-            "\"Sprint 24\", or \"backlog\"), assignee (name substring, or \"unassigned\"), "
-            "and/or label. Each issue carries many fields (project, type, status, priority, "
-            "assignee, reporter, sprint, epic, story points, labels, components, fix version, "
-            "due date, watchers, comments) — when rendering, show only the 2-4 that answer the "
-            "actual request, not all of them."
+            "Blocked/Done — pass an ARRAY of these when the request implies more than one, "
+            "e.g. [\"To Do\", \"In Progress\", \"Blocked\"] for 'not done yet'/'still open', in "
+            "ONE call — never a single combined or JSON-looking string), priority (Lowest/Low/"
+            "Medium/High/Highest — pass an ARRAY of these when the request implies more than "
+            "one level, e.g. [\"High\", \"Highest\"] for a broad 'urgent'/'high priority' "
+            "request, in ONE call rather than picking just one or fetching twice), issue_type "
+            "(Story/Bug/Task/Epic/Sub-task), sprint (e.g. \"Sprint 24\", or \"backlog\"), "
+            "assignee (name substring, or \"unassigned\"), and/or label. Each issue carries "
+            "many fields (project, type, status, priority, assignee, reporter, sprint, epic, "
+            "story points, labels, components, fix version, due date, watchers, comments) — "
+            "when rendering, show only the 2-4 that answer the actual request, not all of them."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "project": {"type": "string", "enum": ["ENG", "DES"]},
-                "status": {"type": "string", "enum": ["To Do", "In Progress", "In Review", "Blocked", "Done"]},
+                "status": {
+                    "anyOf": [
+                        {"type": "string", "enum": ["To Do", "In Progress", "In Review", "Blocked", "Done"]},
+                        {
+                            "type": "array",
+                            "description": "Use this when the request implies more than one status, e.g. [\"To Do\", \"In Progress\", \"Blocked\"] for 'not done yet'/'still open'.",
+                            "items": {"type": "string", "enum": ["To Do", "In Progress", "In Review", "Blocked", "Done"]},
+                        },
+                    ]
+                },
                 "priority": {
                     "anyOf": [
                         {"type": "string", "enum": ["Lowest", "Low", "Medium", "High", "Highest"]},
@@ -359,6 +370,7 @@ def _build_system(status, first_turn=False, extra_system=""):
         "coming back with few results or none is normal — render that honestly.\n\n"
         "If the message isn't a data request at all (a greeting, thanks, small talk, a question "
         "about what you can do), don't call any tool — just reply normally in plain text.\n\n"
+        + load_skill("render_dont_narrate") + "\n\n" +
         "Memory: if this conversation already includes a line like 'Built \"...\"' describing "
         "something you built earlier, that's a real screen you already showed this person — a "
         "short follow-up means adjust or narrow THAT, using it as context. Still re-fetch "
@@ -471,7 +483,34 @@ def _make_dispatch(status, seed_fetched_data, verbose, first_turn=False):
                 if state["tool_failures"].get(name) == err_str:
                     return ce.ToolOutcome(final={"error": err_str})
                 state["tool_failures"][name] = err_str
-                return ce.ToolOutcome(tool_result=json.dumps({"error": err_str}))
+                # Added 2026-09-06, fixing a real bug found live: this used to be a
+                # bare {"error": err_str} with no guidance, unlike the "not connected"
+                # tool_result above which explicitly says "still help with whatever
+                # other connected apps are relevant." Without that instruction here,
+                # the model was observed abandoning the whole request — including a
+                # DIFFERENT app's real, already-fetched data — and answering in
+                # ungrounded plain chat text instead (which no guardrail ever checks;
+                # only render_view's dispatch branch runs find_fabricated_content/
+                # find_fabricated_stats). This app passed its CONNECTED check but its
+                # real call failed anyway (e.g. an expired/revoked OAuth token) — that
+                # is a fact to report about THIS app, never a reason to stop covering
+                # whichever other relevant apps are actually working.
+                return ce.ToolOutcome(tool_result=json.dumps({
+                    "error": err_str,
+                    "instruction": (
+                        f"{label}'s real fetch call failed just now (see 'error' above) — "
+                        f"likely an expired/revoked token or a real upstream problem, not "
+                        f"the same thing as 'not connected'. Do not call {name} again this "
+                        "conversation. Tell the person plainly what failed and that they "
+                        "may need to reconnect it from the Integrations page. If the "
+                        "request also needs other apps that ARE connected and relevant, "
+                        "still fetch from those and call render_view with their real "
+                        "data — never skip render_view and describe a finding in plain "
+                        "chat text instead, even a 'nothing urgent' finding. Note this "
+                        "app's failure in the screen's 'meta' field, exactly as you would "
+                        "for an app that was never connected at all."
+                    ),
+                }))
             state["sources_fetched"].add(app_key)
             state["fetched_data"] = True
             if verbose:

@@ -48,16 +48,23 @@ ISSUES = [
 def get_issues(project=None, status=None, priority=None, issue_type=None, sprint=None, assignee=None, label=None, **_extra):
     """
     Fetch Jira-style issues, optionally filtered by project (ENG/DES),
-    status (To Do/In Progress/In Review/Blocked/Done), priority
-    (Lowest/Low/Medium/High/Highest — pass either a single string or a
-    list/tuple of strings to match ANY of several priorities in one call,
-    e.g. ["High", "Highest"] for a broad "urgent"/"high priority" request),
-    issue_type (Story/Bug/Task/Epic/Sub-task), sprint (e.g. "Sprint 24" —
-    pass "backlog" to match issues with no sprint), assignee (matches on
-    name, case-insensitive substring; pass "unassigned" to match issues
-    with no assignee), and/or label (matches if the label is anywhere in
-    the issue's labels list). Returns a copy of each matching issue —
-    callers can't accidentally mutate ISSUES.
+    status (To Do/In Progress/In Review/Blocked/Done — pass either a single
+    string or a list/tuple of strings to match ANY of several statuses in
+    one call, e.g. ["To Do", "In Progress", "Blocked"] for a broad "not
+    done yet" request; added 2026-09-06 mirroring priority's existing
+    array support below, after a real request needing several statuses at
+    once — "what's not done" — was observed making the model invent a
+    malformed JSON-stringified array in this argument instead, silently
+    matching zero issues since that string never equals any real status),
+    priority (Lowest/Low/Medium/High/Highest — pass either a single string
+    or a list/tuple of strings to match ANY of several priorities in one
+    call, e.g. ["High", "Highest"] for a broad "urgent"/"high priority"
+    request), issue_type (Story/Bug/Task/Epic/Sub-task), sprint (e.g.
+    "Sprint 24" — pass "backlog" to match issues with no sprint), assignee
+    (matches on name, case-insensitive substring; pass "unassigned" to
+    match issues with no assignee), and/or label (matches if the label is
+    anywhere in the issue's labels list). Returns a copy of each matching
+    issue — callers can't accidentally mutate ISSUES.
 
     **_extra: silently absorbs and ignores any other keyword the model
     passes that isn't a real filter here (seen live: a model reaching for
@@ -72,7 +79,8 @@ def get_issues(project=None, status=None, priority=None, issue_type=None, sprint
     if project:
         results = [i for i in results if i["project"].lower() == project.lower()]
     if status:
-        results = [i for i in results if i["status"].lower() == status.lower()]
+        wanted_status = {status.lower()} if isinstance(status, str) else {s.lower() for s in status}
+        results = [i for i in results if i["status"].lower() in wanted_status]
     if priority:
         wanted = {priority.lower()} if isinstance(priority, str) else {p.lower() for p in priority}
         results = [i for i in results if i["priority"].lower() in wanted]
