@@ -57,6 +57,7 @@ from connectors_github import get_github_issues
 from validation import validate_view
 from users import get_user, scope_issues, DEFAULT_USER
 from guardrails import find_fabricated_content, find_fabricated_stats, fabricated_content_nudge
+from skills import load_skill
 import rag_index
 from rag_scope import scope_knowledge_base_results as _scope_knowledge_base_results
 import claude_engine as ce
@@ -153,6 +154,7 @@ SYSTEM = (
     "tone 'critical'; 'enhancement' or clearly minor → tone 'good'; anything else → tone "
     "'default'. Do not pad the screen with anything unrequested. You must call render_view "
     "before finishing — do not answer in plain text.\n\n"
+    + load_skill("ui_composition") + "\n\n" +
     "Only call ask_user first if the request is genuinely ambiguous in a way that would "
     "change what you'd fetch — and only once. After the person answers your question, proceed "
     "straight to get_github_issues and render_view; do not ask a second question in the same "

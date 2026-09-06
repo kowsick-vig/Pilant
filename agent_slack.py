@@ -52,6 +52,7 @@ from schema import UI_SCHEMA
 from connectors_slack import get_slack_messages
 from validation import validate_view
 from guardrails import find_fabricated_content, find_fabricated_stats, fabricated_content_nudge
+from skills import load_skill
 import rag_index
 import claude_engine as ce
 
@@ -159,6 +160,7 @@ SYSTEM = (
     "for enumerating a list of messages. Do not add a second 'panel' component next to the list "
     "just to restate a count — the list itself already shows every message; a redundant summary "
     "panel is exactly the kind of unrequested padding to avoid.\n\n"
+    + load_skill("ui_composition") + "\n\n" +
     "If they're NOT asking for Slack data — a greeting, thanks, small talk, a question about "
     "what you can do, or anything else conversational — do not call any tool. Just reply "
     "normally in plain text, like a helpful, friendly assistant would. There's nothing to fetch "

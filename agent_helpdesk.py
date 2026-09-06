@@ -48,6 +48,7 @@ from schema import UI_SCHEMA
 from connectors_helpdesk import get_tickets
 from validation import validate_view
 from guardrails import find_fabricated_content, find_fabricated_stats, fabricated_content_nudge
+from skills import load_skill
 import claude_engine as ce
 
 TOOLS = [
@@ -122,6 +123,7 @@ SYSTEM = (
     "enumerating a list of tickets. Do not add a second 'panel' component next to the list just "
     "to restate a count — the list itself already shows every ticket; a redundant summary panel "
     "is exactly the kind of unrequested padding to avoid.\n\n"
+    + load_skill("ui_composition") + "\n\n" +
     "Only call ask_user first if the request is genuinely ambiguous in a way that would "
     "change what you'd fetch — and only once. After the person answers, proceed straight to "
     "get_tickets and render_view; do not ask a second question in the same request, and do "

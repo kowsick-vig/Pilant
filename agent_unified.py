@@ -102,6 +102,7 @@ from connectors_helpdesk import get_tickets
 from connectors_jira import get_issues as get_jira_issues
 from validation import validate_view
 from guardrails import find_fabricated_content, find_fabricated_stats, fabricated_content_nudge
+from skills import load_skill
 import claude_engine as ce
 
 APPS = {
@@ -347,6 +348,10 @@ def _build_system(status, first_turn=False, extra_system=""):
         "items -> 'critical' or 'warning', otherwise 'default'). Every stat's value must be a "
         "real count of real rows you're about to list — never an estimate, never a number from "
         "outside this request's own fetched data.\n\n"
+        "Per-app component choice: a per-app section defaults to 'list' as described above, but "
+        "doesn't have to be — the same guidance a single-app connector would use for choosing "
+        "among the newer component types applies to any one app's own section here too:\n\n"
+        + load_skill("ui_composition") + "\n\n" +
         "Critical: render_view's fields must contain real, literal data from the fetch tools "
         "you actually called this conversation — never invent a sender, message, issue, or "
         "ticket, and never write placeholder text like 'Subject' or 'Message 1' as a value. If "
