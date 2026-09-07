@@ -2059,6 +2059,21 @@ def studio_workflow_spa(workflow_id):
     return _serve_spa()
 
 
+@app.route("/workspace")
+@app.route("/workspace/<connector_key>")
+@login_required
+def workspace_spa(connector_key=None):
+    """Serves the SPA shell for the Workspace screen's React Router routes
+    ("/workspace" and "/workspace/:connector") — same reasoning as
+    studio_workflow_spa above: a direct load or refresh needs Flask to hand
+    back the same static shell; the real per-connector page is built
+    client-side (WorkspacePage.jsx) against the same JSON API every other
+    screen already uses (no new workflow model — a "workspace" is just the
+    connector's existing workflow, found or created via
+    GET/POST /api/workflows)."""
+    return _serve_spa()
+
+
 @app.route("/studio/panel_search", methods=["POST"])
 @login_required
 def studio_panel_search():
@@ -3102,6 +3117,32 @@ def api_integrations():
         for key, meta in CATEGORY_META.items()
     ]
     return jsonify({"categories": categories, "items": items})
+
+
+@app.route("/api/views")
+@_api_login_required
+def api_list_views():
+    """Backs the new Workspace screen's "Save view" button (see the React
+    frontend's WorkspacePage) — reuses saved_views.py exactly as the old
+    Composer already did (see agent_composer.py's own docstring on the
+    same "store what to re-run, not a snapshot" philosophy), just exposed
+    as JSON now instead of server-rendered HTML. Scoped to the logged-in
+    user, same ownership enforcement list_views() always had."""
+    username = session["username"]
+    return jsonify({"views": list_views(username)})
+
+
+@app.route("/api/views", methods=["POST"])
+@_api_login_required
+def api_save_view():
+    username = session["username"]
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "nothing_to_save"}), 400
+    view = save_view(username, name, query)
+    return jsonify({"view": view})
 
 
 def _gmail_panel_body_html(wf, panel_folder, panel_message, frame_base):

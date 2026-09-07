@@ -10,6 +10,7 @@ export default function Sidebar({ workflows, activeWorkflowId, onNewWorkflow }) 
   const location = useLocation();
   const navigate = useNavigate();
   const onIntegrations = location.pathname.startsWith("/integrations");
+  const onWorkspace = location.pathname.startsWith("/workspace");
 
   return (
     <div className="sidebar">
@@ -47,6 +48,9 @@ export default function Sidebar({ workflows, activeWorkflowId, onNewWorkflow }) 
         )}
       </div>
       <div className="sidebar-nav">
+        <Link className={`wf-item nav-integrations${onWorkspace ? " active" : ""}`} to="/workspace">
+          🧭 Workspaces
+        </Link>
         <a className="wf-item nav-integrations" href="/inbox?folder=inbox">
           📩 Full inbox
         </a>

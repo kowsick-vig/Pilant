@@ -48,4 +48,6 @@ export const api = {
   integrations: () => request("/api/integrations"),
   disconnectGmail: () => post("/oauth/gmail/disconnect"),
   ragSync: () => post("/rag/sync"),
+  listViews: () => request("/api/views"),
+  saveView: (name, query) => post("/api/views", { name, query }),
 };

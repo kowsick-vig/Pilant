@@ -133,6 +133,72 @@ body.studio-body { height:100vh; overflow:hidden; }
 
 .gmail-panel-frame { width:100%; border:none; min-height:520px; border-radius:10px; }
 
+/* ---- Workspace screen (new — a per-connector "your work" view, distinct
+   from the chat+preview Studio workflow) ---- */
+.workspace-main { flex:1; overflow-y:auto; padding:28px 32px 40px; }
+.workspace-page { max-width:1240px; margin:0 auto; }
+.ws-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:22px; }
+.ws-eyebrow { font-family:'IBM Plex Mono',monospace; font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); margin:0 0 8px; }
+.ws-title { font-family:'Sora',sans-serif; font-weight:700; font-size:2rem; letter-spacing:-.01em; margin:0 0 8px; text-transform:capitalize; }
+.ws-subtitle { font-size:.92rem; color:var(--text-muted); margin:0; }
+.ws-save-btn { display:inline-flex; align-items:center; gap:8px; background:var(--surface) !important; color:var(--text) !important; border:1px solid var(--border) !important; border-radius:10px; padding:10px 16px; font-size:.85rem; font-weight:600; white-space:nowrap; flex:none; }
+.ws-save-btn:hover { border-color:var(--accent) !important; }
+.ws-save-btn.saved { color:#227A55 !important; border-color:#227A55 !important; }
+
+.ws-ai-bar { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 18px; box-shadow:var(--shadow-sm); margin-bottom:16px; }
+.ws-ai-icon { flex:none; font-size:1.05rem; }
+.ws-ai-bar input { flex:1; border:none; background:none; font-size:.92rem; color:var(--text); font-family:'IBM Plex Sans',sans-serif; padding:0; }
+.ws-ai-bar input:focus { outline:none; }
+.ws-ai-bar input::placeholder { color:var(--text-muted); }
+.ws-ai-submit { flex:none; width:34px; height:34px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; padding:0; background:var(--surface-2); color:var(--text-muted); }
+.ws-ai-submit:hover { background:var(--accent); color:#fff; opacity:1; }
+.ws-ai-hint { font-size:.8rem; color:var(--text-muted); font-style:italic; margin:0 0 16px 4px; }
+
+.ws-tools-row { display:flex; align-items:center; gap:14px; font-size:.82rem; color:var(--text-muted); margin-bottom:18px; position:relative; }
+.ws-tools-chip { display:inline-flex; align-items:center; gap:7px; background:var(--surface-2); border-radius:999px; padding:5px 12px 5px 8px; font-weight:500; color:var(--text); }
+.ws-choose-tools { display:inline-flex; align-items:center; gap:5px; background:none; border:none; color:var(--accent); font-weight:600; font-size:.82rem; cursor:pointer; padding:0; font-family:inherit; }
+.ws-tools-menu { position:absolute; top:100%; left:0; margin-top:6px; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-md); padding:6px; z-index:5; min-width:200px; }
+.ws-tools-menu-item { display:flex; align-items:center; gap:9px; width:100%; text-align:left; background:none; border:none; padding:9px 10px; border-radius:8px; font-size:.84rem; color:var(--text); cursor:pointer; font-family:inherit; }
+.ws-tools-menu-item:hover { background:var(--surface-2); }
+.ws-tools-menu-item.active { background:rgba(108,124,255,.1); color:var(--accent); font-weight:600; }
+
+.ws-tabs-row { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:14px; margin-bottom:14px; }
+.ws-view-tabs { display:flex; gap:2px; background:var(--surface-2); border-radius:10px; padding:3px; }
+.ws-view-tab { display:flex; align-items:center; gap:6px; background:none; border:none; padding:7px 13px; border-radius:8px; font-size:.82rem; font-weight:500; color:var(--text-muted); cursor:pointer; font-family:inherit; }
+.ws-view-tab.active { background:var(--surface); color:var(--text); box-shadow:var(--shadow-sm); font-weight:600; }
+.ws-utility-row { display:flex; align-items:center; gap:10px; }
+.ws-search { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:.82rem; color:var(--text-muted); min-width:180px; }
+.ws-search input { border:none; background:none; font-size:.82rem; color:var(--text); flex:1; font-family:'IBM Plex Sans',sans-serif; }
+.ws-search input:focus { outline:none; }
+.ws-status-select { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:.82rem; color:var(--text); font-family:'IBM Plex Sans',sans-serif; cursor:pointer; }
+.ws-refresh-btn { background:var(--surface) !important; border:1px solid var(--border) !important; color:var(--text-muted) !important; width:34px; height:34px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; padding:0; flex:none; }
+.ws-refresh-btn:hover { border-color:var(--accent) !important; color:var(--text) !important; }
+.ws-refresh-btn.spinning { animation: ws-spin 0.7s linear; }
+@keyframes ws-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+
+.ws-folder-tabs { display:flex; gap:22px; margin-bottom:16px; }
+.ws-folder-tab { background:none; border:none; padding:8px 4px; font-size:.85rem; font-weight:500; color:var(--text-muted); cursor:pointer; font-family:inherit; border-radius:8px; }
+.ws-folder-tab.active { color:var(--accent); background:rgba(108,124,255,.1); padding:8px 12px; font-weight:600; }
+
+.ws-connect-row { display:flex; align-items:center; gap:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:20px; }
+.ws-connect-icon { flex:none; width:64px; height:44px; border-radius:8px; background:rgba(198,57,47,.08); display:flex; align-items:center; justify-content:center; font-size:1.2rem; }
+.ws-connect-text { flex:1; }
+.ws-connect-text strong { display:block; font-size:.9rem; margin-bottom:2px; }
+.ws-connect-text span { font-size:.8rem; color:var(--text-muted); }
+
+.ws-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:70px 20px; color:var(--text-muted); gap:8px; }
+.ws-empty-icon { font-size:2.6rem; color:var(--border); margin-bottom:6px; }
+.ws-empty-title { font-family:'Sora',sans-serif; font-weight:700; font-size:1.15rem; color:var(--text); margin:0; }
+.ws-empty-sub { font-size:.85rem; margin:0; max-width:320px; }
+
+.ws-board { display:flex; gap:16px; overflow-x:auto; padding-bottom:8px; }
+.ws-board-col { flex:none; width:260px; background:var(--surface-2); border-radius:12px; padding:12px; }
+.ws-board-col-head { display:flex; justify-content:space-between; align-items:center; font-size:.76rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-bottom:10px; padding:0 4px; }
+.ws-board-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-bottom:8px; box-shadow:var(--shadow-sm); }
+.ws-board-card-name { font-size:.84rem; font-weight:600; margin-bottom:3px; }
+.ws-board-card-note { font-size:.76rem; color:var(--text-muted); }
+.ws-focus-card { max-width:520px; margin:20px auto; }
+
 /* ---- Ported from renderer.py's CSS (the .app-window "device" render) ---- */
 .app-window {
   --app-bg:#F4F6FB; --app-card:#FFFFFF; --app-border:#E3E7F1; --app-text:#171B2E; --app-muted:#6B7385;
