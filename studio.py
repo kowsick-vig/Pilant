@@ -3226,10 +3226,24 @@ def gmail_panel_frame():
 
     panel_message = (request.args.get("panel_message") or "").strip() or None
     body = _gmail_panel_body_html(wf, panel_folder, panel_message, frame_base)
+    # CSS: SHARED_CSS alone only supplies the :root color tokens (--surface/
+    # --border/--text/--accent/...) — the actual .gmail-app/.gmail-row/
+    # .gmail-compose/etc rules those tokens feed into live in renderer.py's
+    # GMAIL_CSS, and the light-theme-specific tweaks (status pill colors,
+    # star/delete hover states) live in STUDIO_LIGHT_OVERRIDE_CSS. Missing
+    # both meant this iframe rendered as unstyled link/button text with a
+    # real Gmail account connected (only ever exercised the styled path
+    # against the plain "not connected" fallback before, which needs no
+    # gmail-* classes at all). Deliberately skips APP_CSS (unlike
+    # _page_shell's SHARED_CSS+APP_CSS+GMAIL_CSS+STUDIO_LIGHT_OVERRIDE_CSS
+    # concatenation) — this panel never uses .app-window/.stat-grid/etc,
+    # and APP_CSS's own :root re-declares the OLD dark tokens, which would
+    # need STUDIO_LIGHT_OVERRIDE_CSS to win the cascade back again for no
+    # reason here.
     html = (
         "<!doctype html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        f"<style>{SHARED_CSS}\nbody{{margin:0;background:#fff;}}</style>"
+        f"<style>{SHARED_CSS}\n{GMAIL_CSS}\n{STUDIO_LIGHT_OVERRIDE_CSS}\nbody{{margin:0;background:#fff;}}</style>"
         f"</head><body>{body}</body></html>"
     )
     return html
