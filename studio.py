@@ -2058,20 +2058,19 @@ def studio_workflow_spa(workflow_id):
     static shell."""
     return _serve_spa()
 
-
+# Note: the Workspace screen used to be its own route here (/workspace,
+# /workspace/<connector_key>, serving WorkspacePage.jsx) but that duplicated
+# the chat that already lives on every /studio/<id> workflow screen. It's
+# now folded into the workflow screen itself as a component
+# (WorkspacePanel.jsx, rendered inside StudioPage's existing preview pane)
+# rather than a second page/route, so those routes and that file are gone.
+# A plain redirect (rather than just letting these 404) in case anyone has
+# an old /workspace URL bookmarked or open in a tab already.
 @app.route("/workspace")
 @app.route("/workspace/<connector_key>")
 @login_required
-def workspace_spa(connector_key=None):
-    """Serves the SPA shell for the Workspace screen's React Router routes
-    ("/workspace" and "/workspace/:connector") — same reasoning as
-    studio_workflow_spa above: a direct load or refresh needs Flask to hand
-    back the same static shell; the real per-connector page is built
-    client-side (WorkspacePage.jsx) against the same JSON API every other
-    screen already uses (no new workflow model — a "workspace" is just the
-    connector's existing workflow, found or created via
-    GET/POST /api/workflows)."""
-    return _serve_spa()
+def workspace_redirect(connector_key=None):
+    return redirect(url_for("studio"))
 
 
 @app.route("/studio/panel_search", methods=["POST"])

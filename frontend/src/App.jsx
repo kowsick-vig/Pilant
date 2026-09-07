@@ -3,7 +3,6 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import StudioPage from "./pages/StudioPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
-import WorkspacePage from "./pages/WorkspacePage";
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -51,22 +50,6 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <IntegrationsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/workspace"
-        element={
-          <RequireAuth>
-            <WorkspacePage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/workspace/:connector"
-        element={
-          <RequireAuth>
-            <WorkspacePage />
           </RequireAuth>
         }
       />

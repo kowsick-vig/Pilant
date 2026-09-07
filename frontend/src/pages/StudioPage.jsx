@@ -4,17 +4,15 @@ import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import ChatPane from "../components/ChatPane";
-import RenderView from "../components/RenderView";
+import WorkspacePanel from "../components/WorkspacePanel";
 import JiraDetail from "../components/JiraDetail";
 
 // React port of studio.py's render_studio / _page_shell / _preview_html.
-// The Gmail live panel is embedded via <iframe src="/studio/gmail_panel_frame">
-// rather than ported component-by-component — see studio.py's own comment
-// on that route: gmail_site.py's real read+write inbox (star/delete/reply/
-// compose, real message IDs) already works end to end and every one of its
-// actions honors an arbitrary same-site next_url, so reusing it unchanged
-// behind an iframe was far lower-risk than a second full rebuild of that
-// subsystem in React.
+// The right-hand pane is WorkspacePanel: a workspace-style display (view
+// tabs, search/status/refresh, Gmail folder tabs above the real live-inbox
+// iframe) of whatever the chat on the left has built — see that
+// component's own header comment for why this replaced a separate
+// /workspace page.
 export default function StudioPage() {
   const { user, logout } = useAuth();
   const { id } = useParams();
@@ -99,34 +97,7 @@ export default function StudioPage() {
     if (jiraKey) {
       return <JiraDetail issueKey={jiraKey} onBack={() => setJiraKey(null)} />;
     }
-    if (wf.connector === "gmail") {
-      return (
-        <>
-          <p className="preview-label">Live preview</p>
-          {wf.last_request_text ? <p className="preview-request">"{wf.last_request_text}"</p> : null}
-          <iframe
-            className="gmail-panel-frame"
-            title="Gmail live preview"
-            src={`/studio/gmail_panel_frame?workflow_id=${encodeURIComponent(wf.id)}`}
-          />
-        </>
-      );
-    }
-    if (!wf.last_render) {
-      return (
-        <div className="preview-empty">
-          <p>Live preview</p>
-          <p className="preview-hint">Nothing generated yet — describe what you want in the chat on the left.</p>
-        </div>
-      );
-    }
-    return (
-      <>
-        <p className="preview-label">Live preview</p>
-        {wf.last_request_text ? <p className="preview-request">"{wf.last_request_text}"</p> : null}
-        <RenderView view={wf.last_render} jiraOnly={wf.connector === "jira"} onOpenJira={setJiraKey} />
-      </>
-    );
+    return <WorkspacePanel wf={wf} onWfUpdate={setWf} onOpenJira={setJiraKey} />;
   };
 
   return (
