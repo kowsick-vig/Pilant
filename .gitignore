@@ -10,3 +10,8 @@ output_test.html
 # Local RAG knowledge base (rag_index.py) — regenerable from live connector
 # data via rag_ingest.py, and grows large; never something to commit.
 rag_store/
+
+# React frontend (frontend/) — node_modules/dist are regenerable build
+# artifacts (npm install && npm run build), never something to commit.
+frontend/node_modules/
+frontend/dist/

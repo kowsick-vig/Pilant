@@ -95,8 +95,9 @@ import sys
 from collections import Counter
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlencode
 
-from flask import Flask, request, session, redirect, url_for
+from flask import Flask, request, session, redirect, url_for, jsonify, send_from_directory, abort
 
 import connectors_gmail
 import connectors_jira
@@ -203,6 +204,10 @@ app.register_blueprint(gmail_bp)
 # module docstring for the rest of that one-time setup.
 PORT = 5008
 GMAIL_OAUTH_REDIRECT_URI = f"http://127.0.0.1:{PORT}/oauth/gmail/callback"
+# Where the built React app lives — see the "JSON API (React frontend)"
+# section near the end of this file (_serve_spa/spa_assets). Built via
+# `cd frontend && npm run build`, output to frontend/dist by vite.config.js.
+FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
 
 def _esc(s):
@@ -1993,7 +1998,11 @@ def customer_open():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
-        return render_login()
+        # Serves the React SPA shell — the real login form is now built
+        # client-side against POST /api/login (see the JSON API section
+        # below). Legacy form POST handling below is left working as a
+        # fallback.
+        return _serve_spa()
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
     user = verify_login(username, password)
@@ -2019,78 +2028,35 @@ def index():
 @app.route("/studio")
 @login_required
 def studio():
-    user = get_user(session["username"])
-    wf = _current_workflow()
-    # panel_folder: which real Gmail folder the embedded preview's own tab
-    # strip is scoped to (render_inbox_panel_tabs' links round-trip here
-    # via ?panel_folder=). An EXPLICIT ?panel_folder= (a real click on one
-    # of the panel's own folder tabs, or its "clear" link) always wins and
-    # also drops any chat-driven search filter — a manual folder click
-    # means "show me this folder's own contents," not "keep filtering by
-    # whatever I typed in chat earlier." With no ?panel_folder= at all
-    # (a plain page load — after login, after sending a chat message, ...)
-    # it falls back to wf["gmail_panel_folder"], which _handle_studio_message
-    # keeps in sync with the most recent chat request's real fetch scope —
-    # added 2026-08-29 so a fresh /studio load reflects what was just asked
-    # for instead of always resetting to "inbox".
-    raw_panel_folder = request.args.get("panel_folder")
-    if raw_panel_folder is not None:
-        panel_folder = resolve_panel_folder(raw_panel_folder)
-        if wf["connector"] == "gmail":
-            wf["gmail_panel_folder"] = panel_folder
-            wf["gmail_panel_query"] = None
-            # A folder-tab click is the panel's own "start fresh" affordance —
-            # also clear the panel's own search box (POST /studio/panel_search
-            # below) so its remembered raw text doesn't linger after landing
-            # on a folder via the tabs instead of via a search.
-            wf["gmail_panel_search_text"] = None
-    else:
-        panel_folder = wf.get("gmail_panel_folder", "inbox") if wf["connector"] == "gmail" else "inbox"
+    """Serves the React SPA shell — the real Studio UI (sidebar, chat, live
+    preview) is now built client-side against the JSON API below (see
+    "--- JSON API (React frontend) ---" further down this file). The old
+    server-rendered version of this route (query-param-driven panel_folder/
+    panel_chip/panel_message/jira_detail handling + render_studio()) was
+    removed 2026-09-07 during the React migration; render_studio/_chat_html/
+    _preview_html/_sidebar_html are left defined but unused rather than
+    deleted, in case any of that HTML-string logic is wanted again."""
+    return _serve_spa()
 
-    # ?panel_chip=<key> — "improvement idea #1", added 2026-08-29 right after
-    # the search box above: one-tap Unread/Starred/Important filter chips
-    # (render_inbox_panel_chips). A click is a plain GET back to /studio, so
-    # this is where the actual toggle happens — clicking an ALREADY-active
-    # chip's link turns it back off (clears the query) rather than
-    # re-applying the same filter; clicking a different chip (or the same
-    # one while something else is active) replaces whatever query was there,
-    # same "one filter source wins" simplicity the folder tabs already use.
-    # Deliberately independent of the panel_folder branch above so a chip
-    # click never has to also repeat which folder it's for — it always
-    # applies to whatever folder the panel is already showing.
-    raw_panel_chip = request.args.get("panel_chip")
-    if raw_panel_chip is not None and wf["connector"] == "gmail":
-        chip_term = resolve_panel_chip(raw_panel_chip)
-        if chip_term:
-            current_query = (wf.get("gmail_panel_query") or "").strip()
-            if current_query == chip_term:
-                wf["gmail_panel_query"] = None
-                wf["gmail_panel_search_text"] = None
-            else:
-                wf["gmail_panel_query"] = chip_term
-                wf["gmail_panel_search_text"] = chip_term
 
-    # ?panel_message=<id> — added 2026-08-29 at the user's direct request,
-    # after screenshots showed opening a message from the panel navigating
-    # away to the separate "Pilant Mail" full page: "want to do everything
-    # in the studio front page." A real click on a message row (see
-    # gmail_site._embedded_row_html) is a real link back to plain /studio
-    # with this set — deliberately just a transient query param, NOT stored
-    # on wf, so the panel's underlying folder/query/chip scoping is exactly
-    # what it was before opening the message once you go back (the
-    # toolbar's own back arrow, or browser back either work).
-    panel_message = (request.args.get("panel_message") or "").strip() or None
-
-    # ?jira_detail=<key> — added 2026-09-01 alongside the real read+write
-    # Jira detail panel (see _jira_detail_panel_html and connectors_jira's
-    # get_issue/set_issue_status): same transient-query-param pattern as
-    # panel_message above — a real click on a Jira row (renderer.py's
-    # jira_detail_base rewrites the row's link) lands here, never stored on
-    # wf, so the "back to results" link returns to exactly what was
-    # showing before opening the issue.
-    jira_detail = (request.args.get("jira_detail") or "").strip() or None
-
-    return render_studio(user, wf, panel_folder=panel_folder, panel_message=panel_message, jira_detail=jira_detail)
+@app.route("/studio/<workflow_id>")
+@login_required
+def studio_workflow_spa(workflow_id):
+    """Serves the SPA shell for React Router's own "/studio/:id" route (a
+    direct load or a browser refresh on that URL, not client-side
+    navigation — the SPA already handles that without a real request).
+    Registered AFTER the more specific single-segment /studio/<literal>
+    GET routes above (gmail_panel_frame) and matched only if none of those
+    literal rules win first — Werkzeug's routing always prefers a static
+    path segment over a <converter> one at the same position, so this can't
+    accidentally swallow a real named route; it only catches an actual
+    workflow id (or a stale/typo'd one, which the SPA's own fetch to
+    GET /api/workflows/<id> will report as not_found, same as the API
+    already handles today). Does NOT validate workflow_id against
+    WORKFLOWS here on purpose — that check belongs to the JSON API the SPA
+    calls after it mounts, not to whichever route happened to serve the
+    static shell."""
+    return _serve_spa()
 
 
 @app.route("/studio/panel_search", methods=["POST"])
@@ -2142,22 +2108,13 @@ def studio_jira_resolve(key):
 @app.route("/integrations")
 @login_required
 def integrations():
-    user = get_user(session["username"])
-    # One-shot notice from the OAuth routes below (e.g. "Connected as
-    # x@gmail.com", or an error) — popped so it only shows once, same
-    # pattern as render_login's error, just carried across a redirect via
-    # session since the OAuth callback has to redirect before it can render
-    # anything (Google, not this app, controls that response).
-    notice = session.pop("integrations_notice", None)
-    notice_kind = session.pop("integrations_notice_kind", None)
-    # Real filters (not decorative) — the Categories panel and the "Show
-    # only connected" toggle in _integrations_page_html both link back here
-    # with these query params rather than doing any client-side hide/show.
-    category = request.args.get("category") or None
-    if category is not None and category not in CATEGORY_META:
-        category = None
-    installed_only = request.args.get("installed") == "1"
-    return render_integrations(user, notice=notice, notice_kind=notice_kind, category=category, installed_only=installed_only)
+    """Serves the React SPA shell — the real Integrations page is now built
+    client-side against GET /api/integrations (see the JSON API section
+    below). The OAuth routes further down redirect back to this same path
+    with ?notice=&kind= query params instead of a session-flash + server
+    render, since Google's callback has to redirect somewhere and the SPA
+    reads/clears those params on mount."""
+    return _serve_spa()
 
 
 @app.route("/composer", methods=["GET", "POST"])
@@ -2279,21 +2236,35 @@ def composer_delete(view_id):
     return redirect(url_for("composer"))
 
 
+def _integrations_redirect(notice, kind):
+    """Redirects to the (SPA-served) /integrations page carrying a one-shot
+    notice as query params instead of a session flash — used only by the
+    two OAuth legs below, which have to end in a real browser redirect
+    (Google controls oauth_gmail_connect's destination and is the one
+    calling oauth_gmail_callback), so there's no way to just return JSON
+    from a fetch() call the way rag_sync/oauth_gmail_disconnect now do.
+    The React app reads ?notice=&kind= on mount and clears them via
+    history.replaceState so a page refresh doesn't keep re-showing it."""
+    return redirect("/integrations?" + urlencode({"notice": notice, "kind": kind}))
+
+
 @app.route("/rag/sync", methods=["POST"])
 @login_required
 def rag_sync():
-    """Runs rag_ingest.ingest_all() and redirects back to /integrations with
-    a one-shot notice summarizing what happened per connector — same
-    post-redirect-get notice mechanism the OAuth routes already use (see
-    the /integrations route above), reused here rather than a second
-    pattern for the same "show a one-time result after a redirect" need."""
+    """Runs rag_ingest.ingest_all() and returns a JSON summary of what
+    happened per connector, for the React Integrations page's "Sync now"
+    button (a fetch() call, not a full page navigation — unlike the OAuth
+    routes below, nothing external needs to redirect the browser here, so
+    this can just answer directly instead of round-tripping through a
+    session-flash + redirect)."""
     if not rag_index.is_configured():
-        session["integrations_notice"] = (
-            "Can't sync: AWS_BEARER_TOKEN_BEDROCK isn't set in .env (a Bedrock long-term API "
-            "key, needed to generate search embeddings). Add it and restart Studio, then try again."
-        )
-        session["integrations_notice_kind"] = "error"
-        return redirect(url_for("integrations"))
+        return jsonify({
+            "ok": False, "kind": "error",
+            "notice": (
+                "Can't sync: AWS_BEARER_TOKEN_BEDROCK isn't set in .env (a Bedrock long-term API "
+                "key, needed to generate search embeddings). Add it and restart Studio, then try again."
+            ),
+        }), 400
 
     results = rag_ingest.ingest_all()
     parts = []
@@ -2305,9 +2276,11 @@ def rag_sync():
             parts.append(f"{label}: {outcome['error']}")
         else:
             parts.append(f"{label}: {outcome['indexed']} indexed")
-    session["integrations_notice"] = "Sync complete — " + "; ".join(parts)
-    session["integrations_notice_kind"] = "error" if any_error else "ok"
-    return redirect(url_for("integrations"))
+    return jsonify({
+        "ok": not any_error,
+        "kind": "error" if any_error else "ok",
+        "notice": "Sync complete — " + "; ".join(parts),
+    })
 
 
 @app.route("/oauth/gmail/connect")
@@ -2319,7 +2292,10 @@ def oauth_gmail_connect():
     just an authorization code. Uses the fixed GMAIL_OAUTH_REDIRECT_URI
     (see its comment above) rather than reflecting back whatever host is
     in the current request — Google needs that exact string registered in
-    the Cloud Console, so it can't be allowed to vary."""
+    the Cloud Console, so it can't be allowed to vary. This is a real
+    top-level browser navigation (a plain <a href> in the React app, never
+    a fetch() call) since Google's consent page has to take over the
+    whole tab."""
     print(f"[studio] Gmail OAuth redirect_uri: {GMAIL_OAUTH_REDIRECT_URI}", file=sys.stderr)
     print("[studio]   ^ must be registered EXACTLY in Google Cloud Console -> APIs & Services", file=sys.stderr)
     print("[studio]     -> Credentials -> your OAuth 2.0 Client ID -> Authorized redirect URIs", file=sys.stderr)
@@ -2328,9 +2304,7 @@ def oauth_gmail_connect():
     try:
         auth_url = connectors_gmail.get_authorization_url(GMAIL_OAUTH_REDIRECT_URI, state=state)
     except RuntimeError as e:
-        session["integrations_notice"] = str(e)
-        session["integrations_notice_kind"] = "error"
-        return redirect(url_for("integrations"))
+        return _integrations_redirect(str(e), "error")
     return redirect(auth_url)
 
 
@@ -2348,36 +2322,30 @@ def oauth_gmail_callback():
     expected_state = session.pop("gmail_oauth_state", None)
     error = request.args.get("error")
     if error:
-        session["integrations_notice"] = f"Google sign-in was cancelled or denied ({error})."
-        session["integrations_notice_kind"] = "error"
-        return redirect(url_for("integrations"))
+        return _integrations_redirect(f"Google sign-in was cancelled or denied ({error}).", "error")
     if not expected_state or request.args.get("state") != expected_state:
-        session["integrations_notice"] = "That sign-in link looks stale or tampered with — try connecting again."
-        session["integrations_notice_kind"] = "error"
-        return redirect(url_for("integrations"))
+        return _integrations_redirect("That sign-in link looks stale or tampered with — try connecting again.", "error")
     code = request.args.get("code")
     if not code:
-        session["integrations_notice"] = "Google didn't return an authorization code — try connecting again."
-        session["integrations_notice_kind"] = "error"
-        return redirect(url_for("integrations"))
+        return _integrations_redirect("Google didn't return an authorization code — try connecting again.", "error")
     try:
         email_address = connectors_gmail.exchange_code_for_tokens(code, redirect_uri)
     except RuntimeError as e:
-        session["integrations_notice"] = str(e)
-        session["integrations_notice_kind"] = "error"
-        return redirect(url_for("integrations"))
-    session["integrations_notice"] = f"Connected Gmail as {email_address}."
-    session["integrations_notice_kind"] = "ok"
-    return redirect(url_for("integrations"))
+        return _integrations_redirect(str(e), "error")
+    return _integrations_redirect(f"Connected Gmail as {email_address}.", "ok")
 
 
 @app.route("/oauth/gmail/disconnect", methods=["POST"])
 @login_required
 def oauth_gmail_disconnect():
+    """A fetch() call from the React Integrations page, not a full page
+    navigation (unlike connect/callback above, nothing external is
+    involved) — answers directly with JSON instead of redirecting."""
     connectors_gmail.disconnect()
-    session["integrations_notice"] = "Disconnected. New requests will fall back to the shared inbox configured in .env, if any."
-    session["integrations_notice_kind"] = "ok"
-    return redirect(url_for("integrations"))
+    return jsonify({
+        "ok": True, "kind": "ok",
+        "notice": "Disconnected. New requests will fall back to the shared inbox configured in .env, if any.",
+    })
 
 
 @app.route("/studio/new", methods=["POST"])
@@ -2678,22 +2646,22 @@ def _run_agent_for_workflow(wf, text):
         _append_memory_exchange(wf, text, reply_text)
 
 
-@app.route("/studio/message", methods=["POST"])
-@login_required
-def studio_message():
+def _handle_chat_message(wf, text):
     """
-    The one route that actually talks to the composition engine. Every
-    branch below ends the same way — redirect back to /studio — and every
-    failure branch only ever appends to the chat transcript, never touches
-    wf["last_render"]. That split is deliberate: a failed or ambiguous
-    request should never blank out or corrupt a working preview the person
-    already has on screen, only add a message explaining what happened.
-    """
-    text = (request.form.get("text") or "").strip()
-    wf = _current_workflow()
-    if not text:
-        return redirect(url_for("studio"))
+    The one function that actually talks to the composition engine, given a
+    workflow and the person's raw message text. Mutates `wf` in place and
+    returns nothing — every failure branch only ever appends to the chat
+    transcript, never touches wf["last_render"]. That split is deliberate: a
+    failed or ambiguous request should never blank out or corrupt a working
+    preview the person already has on screen, only add a message explaining
+    what happened.
 
+    Factored out of the old studio_message() route on 2026-09-07 during the
+    JSON-API/React migration so BOTH the legacy HTML route (kept for
+    backward compatibility) and the new POST /api/workflows/<id>/message
+    route can share the exact same connector-selection/switch/dispatch
+    logic instead of it living inline in one Flask view function.
+    """
     wf["messages"].append({"role": "user", "text": text})
 
     # No connector chosen yet. If the message names a real, registered app
@@ -2723,7 +2691,7 @@ def studio_message():
                 "text": f"Connected — I can pull from {joined} together here, whichever of them a request actually needs.",
             })
             _run_agent_for_workflow(wf, f"Show me what's relevant across {joined}.")
-            return redirect(url_for("studio"))
+            return
 
         name_matched = all_matched[0] if all_matched else None
         if name_matched:
@@ -2764,7 +2732,7 @@ def studio_message():
             else:
                 wf["connector"] = "custom"
                 _run_agent_for_workflow(wf, text)
-        return redirect(url_for("studio"))
+        return
 
     # A connector is already chosen, but this message looks like a request
     # to connect/switch to a DIFFERENT one mid-conversation — e.g. "now
@@ -2802,9 +2770,23 @@ def studio_message():
             "text": f"Switched this workflow to {label}. Try \"{ex1}\" or \"{ex2}.\" "
                     "(The last preview on the right is still from the previous connector until you build something new here.)",
         })
-        return redirect(url_for("studio"))
+        return
 
     _run_agent_for_workflow(wf, text)
+
+
+@app.route("/studio/message", methods=["POST"])
+@login_required
+def studio_message():
+    """Legacy server-rendered route, kept for backward compatibility after
+    the JSON-API/React migration — just calls _handle_chat_message and
+    redirects back to the (now largely unused) old /studio HTML page. The
+    real frontend calls POST /api/workflows/<id>/message instead (see the
+    API routes section below)."""
+    text = (request.form.get("text") or "").strip()
+    wf = _current_workflow()
+    if text:
+        _handle_chat_message(wf, text)
     return redirect(url_for("studio"))
 
 
@@ -2819,6 +2801,412 @@ def studio_message():
 # "conversational-app-picker" (or a later build tag) after a restart, this
 # process is not running the file you think it is — check `pwd` and
 # `ls -la studio.py` in the terminal you launched it from.
+# =============================================================================
+# --- JSON API (React frontend), added 2026-09-07 -------------------------
+# =============================================================================
+# Everything below is new surface for the React SPA migration — every route
+# above this point is either untouched (gmail_bp, /composer*, /customers*,
+# which stay exactly as they were: separate, still-server-rendered pages,
+# deliberately NOT ported to React in this pass) or was a pre-existing
+# route repointed to serve the SPA shell / answer JSON instead of building
+# an HTML string (see each one's own updated docstring above: login,
+# studio, integrations, rag_sync, the oauth_gmail_* routes).
+#
+# SCOPE, stated plainly: this covers auth, the workflow list + chat/compose
+# flow (all 6 real connectors + custom), the full 17-type render_view JSON
+# passthrough (the frontend implements renderer.py's component-type switch
+# in React instead), the Jira detail/resolve action, and the Integrations
+# page + Gmail OAuth + RAG sync. It does NOT cover the Composer
+# (/composer*) or Customer-360 (/customers*) — those stay on their old
+# server-rendered pages, reachable by direct link, outside the new React
+# shell, for now.
+#
+# GMAIL is the one connector whose live preview was NEVER render_view JSON
+# to begin with (see _preview_html's gmail branch above, and gmail_site.py's
+# own module docstring on why: render_view's schema has no real message-ID
+# field, so the model is never trusted to pick which real email a delete/
+# star action targets — the embedded panel is a fully separate, real,
+# deterministic subsystem with its own dozen-plus routes for star/delete/
+# mark-read/reply/forward/compose/attachments). Rebuilding all of THAT as
+# React components + a matching JSON API would be a comparably-sized
+# second project on its own, so this pass takes the pragmatic option
+# instead: the React Studio shell embeds it as an <iframe> pointing at
+# /studio/gmail_panel_frame below, which reuses the exact same proven
+# gmail_site.py rendering functions (render_inbox_panel/_tabs/_chips/
+# _message) the old server-rendered /studio page used, just wrapped in its
+# own tiny standalone HTML page instead of studio.py's full page shell.
+# Every link/form inside that subsystem is driven by a `next_url`/`next`
+# parameter (see gmail_site.py's own docstrings on render_inbox_panel and
+# _safe_next) — pointing all of them back at this frame's own URL is what
+# makes star/delete/reply/compose/mark-read all keep working correctly
+# *inside the iframe* with zero changes to gmail_site.py itself.
+
+
+def _serve_spa():
+    """Returns the built React app's index.html — the SPA takes over
+    client-side routing for /, /login, /studio, /integrations from there.
+    If frontend/dist doesn't exist yet (frontend not built), returns a
+    plain instruction page instead of a raw 404/500, since this is the
+    single most likely "why is my browser showing nothing" moment during
+    setup."""
+    index_path = FRONTEND_DIST / "index.html"
+    if not index_path.exists():
+        return (
+            "<h1>Pilant Studio frontend not built yet</h1>"
+            "<p>Run <code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code>, "
+            "then reload this page.</p>",
+            200,
+        )
+    return send_from_directory(FRONTEND_DIST, "index.html")
+
+
+@app.route("/assets/<path:filename>")
+def spa_assets(filename):
+    """Vite's build output puts every hashed JS/CSS bundle under dist/assets/
+    — served directly, no auth needed (same as any other static asset;
+    nothing sensitive lives in a compiled frontend bundle)."""
+    return send_from_directory(FRONTEND_DIST / "assets", filename)
+
+
+def _api_login_required(view):
+    """Same session check as login_required above, but answers 401 JSON
+    instead of a 302 redirect to /login — a fetch() call following a
+    redirect would just get the SPA's index.html back with a 200, which
+    the frontend can't distinguish from a real API response, so an API
+    route needs to fail loudly instead."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("username"):
+            return jsonify({"error": "not_authenticated"}), 401
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def _user_json(user):
+    return {"username": user["username"], "name": user.get("name", user["username"]), "role": user.get("role")}
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    user = verify_login(username, password)
+    if user is None:
+        return jsonify({"error": "Incorrect username or password."}), 401
+    session.clear()
+    session["username"] = user["username"]
+    return jsonify({"user": _user_json(user)})
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me")
+def api_me():
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "not_authenticated"}), 401
+    return jsonify({"user": _user_json(get_user(username))})
+
+
+@app.route("/api/connectors")
+@_api_login_required
+def api_connectors():
+    """The registry the "+ New workflow" picker and the Integrations page
+    both need — every CONNECTORS entry's display-relevant fields, with the
+    callables (run_agent, etc.) left out since those aren't JSON-safe and
+    the frontend has no use for them."""
+    items = []
+    for key, cfg in CONNECTORS.items():
+        items.append({
+            "key": key,
+            "label": cfg["label"],
+            "icon": cfg.get("icon", "🔌"),
+            "category": cfg.get("category"),
+            "description": cfg.get("description", ""),
+            "has_oauth": bool(cfg.get("oauth")),
+            "freeform": bool(cfg.get("freeform")),
+        })
+    return jsonify({"connectors": items, "default": DEFAULT_CONNECTOR})
+
+
+def _workflow_json(wf):
+    cfg = CONNECTORS.get(wf["connector"]) if wf["connector"] else None
+    out = {
+        "id": wf["id"],
+        "title": wf["title"],
+        "connector": wf["connector"],
+        "connector_label": cfg["label"] if cfg else None,
+        "connector_icon": cfg.get("icon") if cfg else None,
+        "messages": wf["messages"],
+        "last_render": wf["last_render"],
+        "last_request_text": wf["last_request_text"],
+        "pending_clarify": bool(wf["agent_messages"]),
+    }
+    if wf["connector"] == "gmail":
+        out["gmail"] = {
+            "folder": wf.get("gmail_panel_folder", "inbox"),
+            "query": wf.get("gmail_panel_query"),
+            "search_text": wf.get("gmail_panel_search_text"),
+        }
+    return out
+
+
+@app.route("/api/workflows")
+@_api_login_required
+def api_workflows():
+    items = []
+    for wf_id in WORKFLOW_ORDER:
+        wf = WORKFLOWS.get(wf_id)
+        if not wf:
+            continue
+        cfg = CONNECTORS.get(wf["connector"]) if wf["connector"] else None
+        items.append({
+            "id": wf["id"], "title": wf["title"], "connector": wf["connector"],
+            "connector_label": cfg["label"] if cfg else None,
+            "connector_icon": cfg.get("icon") if cfg else None,
+        })
+    return jsonify({"workflows": items, "current_workflow_id": session.get("current_workflow")})
+
+
+@app.route("/api/workflows", methods=["POST"])
+@_api_login_required
+def api_create_workflow():
+    data = request.get_json(silent=True) or {}
+    connector_key = data.get("connector")
+    connector = connector_key if connector_key in CONNECTORS else None
+    wf = _create_workflow(connector=connector)
+    session["current_workflow"] = wf["id"]
+    return jsonify({"workflow": _workflow_json(wf)})
+
+
+@app.route("/api/workflows/<workflow_id>")
+@_api_login_required
+def api_get_workflow(workflow_id):
+    wf = WORKFLOWS.get(workflow_id)
+    if not wf:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"workflow": _workflow_json(wf)})
+
+
+@app.route("/api/workflows/<workflow_id>/open", methods=["POST"])
+@_api_login_required
+def api_open_workflow(workflow_id):
+    wf = WORKFLOWS.get(workflow_id)
+    if not wf:
+        return jsonify({"error": "not_found"}), 404
+    session["current_workflow"] = workflow_id
+    return jsonify({"workflow": _workflow_json(wf)})
+
+
+@app.route("/api/workflows/<workflow_id>/message", methods=["POST"])
+@_api_login_required
+def api_workflow_message(workflow_id):
+    wf = WORKFLOWS.get(workflow_id)
+    if not wf:
+        return jsonify({"error": "not_found"}), 404
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "empty_message"}), 400
+    _handle_chat_message(wf, text)
+    return jsonify({"workflow": _workflow_json(wf)})
+
+
+def _jira_issue_json(issue):
+    return {
+        "key": issue["key"], "summary": issue["summary"], "status": issue["status"],
+        "priority": issue["priority"], "assignee": issue["assignee"], "reporter": issue["reporter"],
+        "sprint": issue["sprint"], "epic": issue["epic"], "story_points": issue["story_points"],
+        "labels": issue["labels"], "components": issue["components"], "fix_version": issue["fix_version"],
+        "due": issue["due"], "created": issue["created"], "updated": issue["updated"],
+        "watchers": issue["watchers"], "comments": issue["comments"], "type": issue["type"],
+        "project": issue["project"],
+        "resolved": issue["status"] == "Done",
+        "tone": "good" if issue["status"] == "Done" else ("critical" if issue["priority"] in ("High", "Highest") else "default"),
+    }
+
+
+@app.route("/api/jira/<key>")
+@_api_login_required
+def api_jira_detail(key):
+    issue = connectors_jira.get_issue(key)
+    if not issue:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"issue": _jira_issue_json(issue)})
+
+
+@app.route("/api/jira/<key>/resolve", methods=["POST"])
+@_api_login_required
+def api_jira_resolve(key):
+    issue = connectors_jira.get_issue(key)
+    if not issue:
+        return jsonify({"error": "not_found"}), 404
+    connectors_jira.set_issue_status(key, "Done")
+    issue = connectors_jira.get_issue(key)
+    return jsonify({"issue": _jira_issue_json(issue)})
+
+
+@app.route("/api/integrations")
+@_api_login_required
+def api_integrations():
+    items = []
+    for key, cfg in CONNECTORS.items():
+        if cfg.get("freeform"):
+            continue
+        item = {
+            "key": key, "label": cfg["label"], "icon": cfg.get("icon", "🔌"),
+            "category": cfg.get("category", "search"), "description": cfg.get("description", ""),
+            "has_oauth": bool(cfg.get("oauth")),
+        }
+        if cfg.get("oauth"):
+            connected_email = connectors_gmail.get_connected_account()
+            item["installed"] = bool(connected_email)
+            item["connected_as"] = connected_email
+        else:
+            item["installed"] = True
+            item["connected_as"] = None
+        items.append(item)
+
+    # Knowledge base (RAG) — a synthetic card, not a CONNECTORS entry (see
+    # _knowledge_base_card_data's docstring above for why it's kept separate).
+    if rag_index.is_configured():
+        stats = rag_index.stats()
+        items.append({
+            "key": "knowledge_base", "label": "Knowledge base", "icon": "🔍",
+            "category": "search",
+            "description": "Search across Gmail, Slack, and GitHub history once synced.",
+            "has_oauth": False, "installed": True, "connected_as": None,
+            "rag_configured": True, "rag_stats": stats,
+        })
+    else:
+        items.append({
+            "key": "knowledge_base", "label": "Knowledge base", "icon": "🔍",
+            "category": "search",
+            "description": "Search across Gmail, Slack, and GitHub history once synced.",
+            "has_oauth": False, "installed": False, "connected_as": None,
+            "rag_configured": False, "rag_stats": None,
+        })
+
+    counts = Counter(it["category"] for it in items)
+    categories = [
+        # CATEGORY_META's icons are HTML-entity strings (e.g. "&#127760;")
+        # meant for the old HTML renderer — unescaped here so the JSON API
+        # hands React a plain unicode character it can render as text,
+        # never needing dangerouslySetInnerHTML for something this simple.
+        {"key": key, "label": meta["label"], "icon": _html.unescape(meta["icon"]), "count": counts.get(key, 0)}
+        for key, meta in CATEGORY_META.items()
+    ]
+    return jsonify({"categories": categories, "items": items})
+
+
+def _gmail_panel_body_html(wf, panel_folder, panel_message, frame_base):
+    """Same fragment-building logic as _preview_html's gmail branch above,
+    parameterized so it can target the iframe frame route's own URL
+    (frame_base) instead of hardcoding "/studio" — see this section's
+    module-level comment on why the Gmail panel is embedded via iframe
+    rather than ported to React component-by-component."""
+    if panel_message:
+        return (
+            '<div class="gmail-app"><div class="gmail-main" style="flex:1;">'
+            f'{render_inbox_panel_message(panel_message, next_url=frame_base)}'
+            '</div></div>'
+        )
+    panel_query = wf.get("gmail_panel_query")
+    panel_rows = render_inbox_panel(next_url=frame_base, folder=panel_folder, query=panel_query)
+    tabs_html = render_inbox_panel_tabs(panel_folder, next_url=frame_base)
+    compose_link = f'<a class="gmail-compose" href="/compose?next={_esc(frame_base)}">&#9998; Compose</a>'
+    folder_param = "all" if panel_folder is None else panel_folder
+    search_box_value = wf.get("gmail_panel_search_text") or panel_query or ""
+    search_html = (
+        '<form class="gmail-panel-search" method="post" action="/studio/gmail_panel_frame/search">'
+        f'<input type="hidden" name="workflow_id" value="{_esc(wf["id"])}">'
+        f'<input type="hidden" name="panel_folder" value="{_esc(folder_param)}">'
+        f'<input type="text" name="panel_q" value="{_esc(search_box_value)}" '
+        'placeholder="Search this folder — real syntax (from:, is:unread...) or plain English" '
+        'autocomplete="off">'
+        '<button type="submit">Search</button>'
+        '</form>'
+    )
+    chips_html = render_inbox_panel_chips(panel_query, next_url=frame_base)
+    query_hint_html = (
+        f'<p class="gmail-panel-query-hint">Filtered to: <strong>{_esc(panel_query)}</strong> '
+        f'<a href="{_esc(frame_base)}&panel_folder={_esc(folder_param)}">&times; clear</a></p>'
+    ) if panel_query else ""
+    return (
+        '<div class="gmail-app"><div class="gmail-main" style="flex:1;">'
+        f'{compose_link}'
+        f'{search_html}'
+        f'{tabs_html}'
+        f'{chips_html}'
+        f'{query_hint_html}'
+        f'<div class="gmail-list">{panel_rows}</div>'
+        '</div></div>'
+    )
+
+
+@app.route("/studio/gmail_panel_frame")
+@login_required
+def gmail_panel_frame():
+    """The iframe target the React Studio shell embeds for a Gmail
+    workflow's live preview — a small standalone HTML page (its own
+    <html>, not the SPA shell) reusing gmail_site.py's real, deterministic
+    inbox-rendering functions. `workflow_id` identifies which workflow's
+    gmail_panel_* state to read/mutate (falls back to the session's current
+    workflow if missing/stale, same as the old /studio route did
+    implicitly via _current_workflow())."""
+    wf = WORKFLOWS.get(request.args.get("workflow_id")) or _current_workflow()
+    frame_base = f"/studio/gmail_panel_frame?workflow_id={wf['id']}"
+
+    raw_panel_folder = request.args.get("panel_folder")
+    if raw_panel_folder is not None:
+        panel_folder = resolve_panel_folder(raw_panel_folder)
+        wf["gmail_panel_folder"] = panel_folder
+        wf["gmail_panel_query"] = None
+        wf["gmail_panel_search_text"] = None
+    else:
+        panel_folder = wf.get("gmail_panel_folder", "inbox")
+
+    raw_panel_chip = request.args.get("panel_chip")
+    if raw_panel_chip is not None:
+        chip_term = resolve_panel_chip(raw_panel_chip)
+        if chip_term:
+            current_query = (wf.get("gmail_panel_query") or "").strip()
+            if current_query == chip_term:
+                wf["gmail_panel_query"] = None
+                wf["gmail_panel_search_text"] = None
+            else:
+                wf["gmail_panel_query"] = chip_term
+                wf["gmail_panel_search_text"] = chip_term
+
+    panel_message = (request.args.get("panel_message") or "").strip() or None
+    body = _gmail_panel_body_html(wf, panel_folder, panel_message, frame_base)
+    html = (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        f"<style>{SHARED_CSS}\nbody{{margin:0;background:#fff;}}</style>"
+        f"</head><body>{body}</body></html>"
+    )
+    return html
+
+
+@app.route("/studio/gmail_panel_frame/search", methods=["POST"])
+@login_required
+def gmail_panel_frame_search():
+    wf = WORKFLOWS.get(request.form.get("workflow_id")) or _current_workflow()
+    raw_folder = request.form.get("panel_folder")
+    panel_folder = resolve_panel_folder(raw_folder) if raw_folder is not None else wf.get("gmail_panel_folder", "inbox")
+    raw_q = request.form.get("panel_q", "")
+    wf["gmail_panel_folder"] = panel_folder
+    wf["gmail_panel_search_text"] = raw_q.strip() or None
+    wf["gmail_panel_query"] = resolve_panel_query(raw_q)
+    return redirect(f"/studio/gmail_panel_frame?workflow_id={wf['id']}")
+
+
 BUILD = "Cross-request conversation memory (2026-08-25)"
 
 if __name__ == "__main__":

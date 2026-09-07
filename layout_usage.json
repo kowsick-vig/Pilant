@@ -108,5 +108,83 @@
       "list"
     ],
     "at": "2026-09-01T21:27:15+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "show all of them, minimal - just key, summary, status",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-07T21:21:50+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "show me open issues assigned to Priya",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-07T21:35:45+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "show me all open issues",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-07T21:36:23+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "show me all open issues",
+    "component_types": [
+      "data_table"
+    ],
+    "at": "2026-09-07T21:36:59+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "show me all open issues",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-07T21:37:25+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "show me all open issues",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-07T21:37:46+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "jira",
+    "request_text": "a compact list of everything open, any priority, any assignee",
+    "component_types": [
+      "list"
+    ],
+    "at": "2026-09-07T21:37:58+00:00"
+  },
+  {
+    "role": "owner",
+    "connector": "unified",
+    "request_text": "give me a full status overview across everything: counts by app, anything urgent, and a breakdown by priority",
+    "component_types": [
+      "stat_grid",
+      "alert",
+      "chart",
+      "chart",
+      "chart",
+      "chart",
+      "list"
+    ],
+    "at": "2026-09-07T21:38:35+00:00"
   }
 ]
