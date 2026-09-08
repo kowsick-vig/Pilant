@@ -81,6 +81,24 @@ class DedicatedAppTests(unittest.TestCase):
         self.assertEqual(change.status_code,200)
         self.assertEqual(self.a.get('/api/data/splunk/'+row['id']).json['record']['status'],'resolved')
         self.assertEqual(self.b.get('/api/data/splunk/'+row['id']).json['record']['status'],row['status'])
+    def test_crm_sample_source_is_ready_immediately_with_crowded_data(self):
+        # CRM added on request ("build a face crm with crowded tasks and add
+        # it into my new connector" -> a fake/sample CRM) as a sixth sample-kind
+        # source, same shape as jira/helpdesk/splunk: no connection needed, own
+        # status set, own fixture module.
+        self.assertTrue(next(c for c in self.a.get('/api/connections').json['connections'] if c['id']=='crm')['configured'])
+        app=self.build(source='crm',prompt='Show overdue follow-ups first, then everything in a table')
+        self.assertEqual(app['source'],'crm')
+        self.assertEqual(app['pages'][0]['status'],'overdue')
+        data=self.a.get('/api/apps/'+app['id']+'/data/'+app['pages'][1]['id']).json
+        self.assertTrue(data['sample'])
+        self.assertGreaterEqual(len(data['records']),20)
+        self.assertTrue(all(r['source']=='crm' for r in data['records']))
+        row=data['records'][0]
+        change=self.post(self.a,'/api/data/crm/'+row['id']+'/actions',{'action':'status','value':'done'})
+        self.assertEqual(change.status_code,200)
+        self.assertEqual(self.a.get('/api/data/crm/'+row['id']).json['record']['status'],'done')
+        self.assertEqual(self.b.get('/api/data/crm/'+row['id']).json['record']['status'],row['status'])
     def test_two_apps_for_same_software_have_independent_purpose_and_navigation(self):
         a=self.build(prompt='Show blocked issues first in a focus screen')
         b=self.build(prompt='Give me a table to browse all issues')

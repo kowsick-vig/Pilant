@@ -37,11 +37,19 @@ import {
   Paperclip,
   FileText,
   Activity,
+  Users,
 } from "lucide-react";
 import "./style.css";
 import "./dedicated.css";
 
-type Source = "gmail" | "github" | "slack" | "jira" | "helpdesk" | "splunk";
+type Source =
+  | "gmail"
+  | "github"
+  | "slack"
+  | "jira"
+  | "helpdesk"
+  | "splunk"
+  | "crm";
 type Layout = "inbox" | "board" | "feed" | "table" | "focus";
 type User = {
   id: string;
@@ -86,6 +94,7 @@ const names: Record<Source, string> = {
   jira: "Jira",
   helpdesk: "Helpdesk",
   splunk: "Splunk",
+  crm: "CRM",
 };
 const sourceIcons = {
   gmail: Mail,
@@ -94,6 +103,7 @@ const sourceIcons = {
   jira: Columns3,
   helpdesk: Ticket,
   splunk: Activity,
+  crm: Users,
 };
 const layouts: { id: Layout; name: string; icon: typeof Inbox }[] = [
   { id: "inbox", name: "Inbox", icon: Inbox },
@@ -845,7 +855,7 @@ function GeneratedApp({
           >
             <SourceIcon source={app.source} small />
             <span>Powered by {names[app.source]}</span>
-            {["jira", "helpdesk", "splunk"].includes(app.source) && <small>Sample</small>}
+            {["jira", "helpdesk", "splunk", "crm"].includes(app.source) && <small>Sample</small>}
           </button>
           <button
             className="secondary"
@@ -912,7 +922,7 @@ function GeneratedApp({
               <br />
               <small>
                 {connection?.account ||
-                  (["jira", "helpdesk", "splunk"].includes(app.source)
+                  (["jira", "helpdesk", "splunk", "crm"].includes(app.source)
                     ? "Private sample changes"
                     : "Your connected account")}
               </small>
@@ -1268,7 +1278,7 @@ function AppCopilot({
       <div className="copilot-source">
         <SourceIcon source={source} small />
         <span>{names[source] || source} data for this app</span>
-        <small>{["jira", "helpdesk", "splunk"].includes(source) ? "Sample data" : "Connected data"}</small>
+        <small>{["jira", "helpdesk", "splunk", "crm"].includes(source) ? "Sample data" : "Connected data"}</small>
       </div>
       <div className="copilot-messages" aria-live="polite">
         {!turns.length && (
@@ -1448,7 +1458,9 @@ function RecordView({
       ? ["open", "in_progress", "escalated", "resolved"]
       : rows.every((r) => r.source === "splunk")
         ? ["new", "investigating", "escalated", "resolved"]
-        : [];
+        : rows.every((r) => r.source === "crm")
+          ? ["open", "in_progress", "overdue", "done"]
+          : [];
   const columns = [...new Set([...base, ...states])];
   const details = (
     <Detail
@@ -1471,7 +1483,7 @@ function RecordView({
               className="board-column"
               key={s}
               onDragOver={(e) => {
-                if (dragged && ["jira", "helpdesk", "splunk"].includes(dragged.source))
+                if (dragged && ["jira", "helpdesk", "splunk", "crm"].includes(dragged.source))
                   e.preventDefault();
               }}
               onDrop={(e) => {
@@ -1494,7 +1506,7 @@ function RecordView({
                     <button
                       className="issue-card"
                       key={row.source + row.id}
-                      draggable={["jira", "helpdesk", "splunk"].includes(row.source)}
+                      draggable={["jira", "helpdesk", "splunk", "crm"].includes(row.source)}
                       onDragStart={() => setDragged(row)}
                       onDragEnd={() => setDragged(null)}
                       onClick={() => onSelect(row)}
@@ -1786,7 +1798,9 @@ function Detail({
       ? ["To Do", "In Progress", "In Review", "Blocked", "Done"]
       : r.source === "splunk"
         ? ["new", "investigating", "escalated", "resolved"]
-        : ["open", "in_progress", "escalated", "resolved"];
+        : r.source === "crm"
+          ? ["open", "in_progress", "overdue", "done"]
+          : ["open", "in_progress", "escalated", "resolved"];
   return (
     <section className="detail-panel" aria-label="Record details">
       <div className="detail-toolbar">
@@ -1891,7 +1905,7 @@ function Detail({
             <ExternalLink size={14} />
           </a>
         )}
-        {["jira", "helpdesk", "splunk"].includes(r.source) && (
+        {["jira", "helpdesk", "splunk", "crm"].includes(r.source) && (
           <div className="detail-actions">
             <label>
               Move to

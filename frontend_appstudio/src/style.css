@@ -399,6 +399,10 @@ small {
   background: #fbf0e1;
   color: #c08a3e;
 }
+.crm {
+  background: #e4f2f1;
+  color: #3f9a91;
+}
 .saved-nav {
   min-height: 40px;
 }

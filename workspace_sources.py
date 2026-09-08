@@ -18,10 +18,12 @@ SOURCES = {
     'jira': {'label': 'Jira', 'kind': 'sample', 'layout': 'board', 'description': 'Try a project board with your own sample issue changes.'},
     'helpdesk': {'label': 'Helpdesk', 'kind': 'sample', 'layout': 'inbox', 'description': 'Explore a support queue with sample tickets.'},
     'splunk': {'label': 'Splunk', 'kind': 'sample', 'layout': 'table', 'description': 'Try a notable-events queue with sample security and ops alerts.'},
+    'crm': {'label': 'CRM', 'kind': 'sample', 'layout': 'board', 'description': 'Try a sales follow-up queue with sample leads, deals, and tasks.'},
 }
 JIRA_STATUSES = ['To Do', 'In Progress', 'In Review', 'Blocked', 'Done']
 HELPDESK_STATUSES = ['open', 'in_progress', 'escalated', 'resolved']
 SPLUNK_STATUSES = ['new', 'investigating', 'escalated', 'resolved']
+CRM_STATUSES = ['open', 'in_progress', 'overdue', 'done']
 
 
 class SourceError(Exception):
@@ -140,6 +142,14 @@ class Sources:
                 item = dict(item, **changed.get(item['id'], {}))
                 rows.append(record(source, item['id'], item['title'], status=item['status'],
                     priority=item['severity'], person=item['owner'], date=item['trigger_time'], detail=item))
+        elif source == 'crm':
+            from connectors_crm import get_tasks
+            changed = self.store.changes(self.owner, source)
+            rows = []
+            for item in get_tasks():
+                item = dict(item, **changed.get(item['id'], {}))
+                rows.append(record(source, item['id'], item['title'], status=item['status'],
+                    priority=item['priority'], person=item['owner'], date=item['due'], detail=item))
         elif source == 'github':
             c = self.config(source)
             repo = c['repo']
@@ -202,8 +212,9 @@ class Sources:
         return base64.urlsafe_b64decode(padded), meta['filename'], meta['mime_type']
 
     def action(self, source, id, action, value):
-        if source in ('jira', 'helpdesk', 'splunk') and action == 'status':
-            statuses = {'jira': JIRA_STATUSES, 'helpdesk': HELPDESK_STATUSES, 'splunk': SPLUNK_STATUSES}[source]
+        if source in ('jira', 'helpdesk', 'splunk', 'crm') and action == 'status':
+            statuses = {'jira': JIRA_STATUSES, 'helpdesk': HELPDESK_STATUSES,
+                'splunk': SPLUNK_STATUSES, 'crm': CRM_STATUSES}[source]
             if value not in statuses:
                 raise ValueError('Choose a valid status.')
             if not self.detail(source, id):

@@ -53,13 +53,14 @@ def starter_app(source, prompt, name='', role=''):
     if source == 'gmail':
         pages = [page('inbox','Inbox',layout), page('starred','Starred','inbox'), page('sent','Sent','inbox')]
         pages[1]['folder']='starred'; pages[2]['folder']='sent'
-    elif source in ['jira','github','helpdesk','splunk']:
+    elif source in ['jira','github','helpdesk','splunk','crm']:
         pages = [page('work','My work',layout),page('all','All records','table')]
-        if any(word in text for word in ['blocked','urgent','priority','critical']):
+        if any(word in text for word in ['blocked','urgent','priority','critical','overdue']):
             pages.insert(0,page('attention','Needs attention','focus'))
             if source == 'jira': pages[0]['status']='Blocked'
             if source == 'helpdesk': pages[0]['status']='escalated'
             if source == 'splunk': pages[0]['status']='escalated'
+            if source == 'crm': pages[0]['status']='overdue'
     else:
         pages = [page('conversation','Conversation',layout),page('browse','Browse messages','table')]
     return validate_app({'title':name or f'My {SOURCES[source]["label"]}',
