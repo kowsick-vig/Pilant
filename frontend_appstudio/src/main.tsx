@@ -105,9 +105,20 @@ const names: Record<Source, string> = {
 // Sources with a real agent_planner.py builder wired up server-side.
 // Kept in sync with workspace_api.py's create_agent_plan `builder` map.
 const AUTOMATE_SOURCES: Source[] = ["jira", "splunk"];
-const automateGoalExamples: Partial<Record<Source, string>> = {
-  jira: "Find urgent blocked issues, identify the assignees, draft follow-up messages and request updates.",
-  splunk: "Find critical or escalated notable events with no assigned analyst, draft an assignment and request triage.",
+// A couple of ready-to-run goals per source, tuned to what the planner's
+// keyword extraction (agent_planner.py's _extract_search_filters /
+// _extract_splunk_search_filters) actually does with them -- not just
+// plausible-sounding text. The first of each list doubles as the
+// textarea's placeholder.
+const automateGoalSuggestions: Partial<Record<Source, string[]>> = {
+  jira: [
+    "Find urgent blocked issues, identify the assignees, draft follow-up messages and request updates.",
+    "Find all blocked issues and draft follow-up messages requesting a status update.",
+  ],
+  splunk: [
+    "Find critical or escalated notable events with no assigned analyst, draft an assignment and request triage.",
+    "Find all unassigned notable events and assign an analyst to each one for triage.",
+  ],
 };
 const sourceIcons = {
   gmail: Mail,
@@ -1512,15 +1523,15 @@ function AgentAutomate({
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const pauseRef = useRef(false);
 
-  async function createPlan(e: React.FormEvent) {
-    e.preventDefault();
-    if (goal.trim().length < 10 || busyPlan) return;
+  async function submitGoal(goalText: string) {
+    if (goalText.trim().length < 10 || busyPlan) return;
+    setGoal(goalText);
     setBusyPlan(true);
     setError("");
     try {
       const d = await api(`/apps/${appId}/agent/plans`, {
         method: "POST",
-        body: json({ goal }),
+        body: json({ goal: goalText }),
       });
       setPlan(d.plan);
       setExpanded(true);
@@ -1535,6 +1546,11 @@ function AgentAutomate({
     } finally {
       setBusyPlan(false);
     }
+  }
+
+  async function createPlan(e: React.FormEvent) {
+    e.preventDefault();
+    await submitGoal(goal);
   }
 
   async function refreshPlan() {
@@ -1674,7 +1690,7 @@ function AgentAutomate({
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
               placeholder={
-                automateGoalExamples[source] ||
+                automateGoalSuggestions[source]?.[0] ||
                 "Describe the goal for the agent to plan and run."
               }
               disabled={busyPlan}
@@ -1692,6 +1708,22 @@ function AgentAutomate({
             {busyPlan ? "Planning…" : "Generate plan"}
             <Sparkles size={16} />
           </button>
+          {(automateGoalSuggestions[source]?.length ?? 0) > 0 && (
+            <div className="agent-goal-suggestions">
+              <small className="copilot-demo-note">Or try one of these:</small>
+              {automateGoalSuggestions[source]!.map((text) => (
+                <button
+                  key={text}
+                  type="button"
+                  disabled={busyPlan}
+                  onClick={() => submitGoal(text)}
+                >
+                  {text}
+                  <ArrowRight size={13} />
+                </button>
+              ))}
+            </div>
+          )}
         </form>
       )}
       {plan && (

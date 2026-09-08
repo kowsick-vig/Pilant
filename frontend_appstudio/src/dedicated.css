@@ -1229,6 +1229,37 @@
   line-height: 1.8;
   resize: vertical;
 }
+.agent-goal-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+}
+.agent-goal-suggestions small {
+  display: block;
+  margin-bottom: 2px;
+}
+.agent-goal-suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  border: 1px solid #e7e1ef;
+  background: #fdfbff;
+  border-radius: 8px;
+  padding: 10px 11px;
+  font-size: 10px;
+  color: #9989ad;
+  line-height: 1.7;
+}
+.agent-goal-suggestions button > svg {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.agent-goal-suggestions button:hover:not(:disabled) {
+  background: #f2edf9;
+  border-color: #d6c7e8;
+}
 .agent-plan-header {
   display: flex;
   align-items: flex-start;
