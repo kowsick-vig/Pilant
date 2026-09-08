@@ -1,128 +1,138 @@
-"""
-workspace_store.py — added 2026-08-29. Save/reopen/rename/regenerate for
-generated workspaces, with real version history — the one place this
-needed a genuinely new module rather than extending saved_views.py (see
-that file's docstring): saved_views.py is flat and append-only-of-new-
-views, with no concept of "this same view, an earlier version of it."
-
-Same JSON-file + threading.Lock + per-username ownership-filter idioms as
-saved_views.py/approvals.py. A stored workspace is:
-
-    {
-        "id": str,                 # == the live workspace_id used for
-                                    # approvals.py/audit_log.py records, so
-                                    # a saved workspace's approval/audit
-                                    # trail is never orphaned by saving
-        "name": str,
-        "owner": username,
-        "created_at": iso8601,
-        "current_version": int,    # 1-based
-        "versions": [
-            {"version": int, "goal": str, "role": str, "title": str, "created_at": iso8601}
-        ],
-    }
-
-Like saved_views.py, a version stores WHAT TO RE-RUN (goal + role), not a
-frozen render — reopening/restoring always calls
-workspace_engine.generate_workspace() again, so Gmail data is always
-live.
-"""
-
+"""User-owned workspace state. Tokens are encrypted at rest; never returned to clients."""
 import json
-import threading
-from datetime import datetime, timezone
+import os
+import sqlite3
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
-
-_STORE_PATH = Path(__file__).parent / "workspace_store.json"
-_LOCK = threading.Lock()
+from cryptography.fernet import Fernet
 
 
-def _read_all():
-    if not _STORE_PATH.exists():
-        return {}
-    try:
-        return json.loads(_STORE_PATH.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
+class Store:
+    def __init__(self, directory):
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        key_path = self.directory / 'encryption.key'
+        if not key_path.exists():
+            try:
+                fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, 'wb') as f:
+                    f.write(Fernet.generate_key())
+            except FileExistsError:
+                pass
+        self.cipher = Fernet(key_path.read_bytes())
+        self.path = self.directory / 'workspace.sqlite3'
+        with self.connect() as db:
+            db.executescript('''
+                CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                    password TEXT NOT NULL, role TEXT NOT NULL, preferences TEXT NOT NULL DEFAULT '{}');
+                CREATE TABLE IF NOT EXISTS connections (owner TEXT, source TEXT, secret BLOB NOT NULL,
+                    PRIMARY KEY(owner, source));
+                CREATE TABLE IF NOT EXISTS views (id TEXT PRIMARY KEY, owner TEXT, spec TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS apps (id TEXT PRIMARY KEY, owner TEXT, spec TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS copilot_turns (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, app TEXT, turn TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS changes (owner TEXT, source TEXT, record TEXT, value TEXT,
+                    PRIMARY KEY(owner, source, record));
+            ''')
+        os.chmod(self.path, 0o600)
 
+    @contextmanager
+    def connect(self):
+        db = sqlite3.connect(self.path, timeout=15)
+        db.row_factory = sqlite3.Row
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
-def _write_all(data):
-    _STORE_PATH.write_text(json.dumps(data, indent=2))
+    def user(self, username):
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM users WHERE id=?', (username,)).fetchone()
+        return dict(row) if row else None
 
+    def add_user(self, username, name, password, role):
+        with self.connect() as db:
+            db.execute('INSERT INTO users(id,name,password,role) VALUES(?,?,?,?)',
+                       (username, name, password, role))
 
-def list_workspaces(username):
-    with _LOCK:
-        data = _read_all()
-    return data.get(username, [])
+    def preferences(self, owner, value):
+        with self.connect() as db:
+            db.execute('UPDATE users SET preferences=? WHERE id=?', (json.dumps(value), owner))
 
+    def connection(self, owner, source):
+        with self.connect() as db:
+            row = db.execute('SELECT secret FROM connections WHERE owner=? AND source=?', (owner, source)).fetchone()
+        return json.loads(self.cipher.decrypt(row['secret'])) if row else None
 
-def get_workspace(username, workspace_id):
-    for w in list_workspaces(username):
-        if w["id"] == workspace_id:
-            return w
-    return None
+    def save_connection(self, owner, source, value):
+        encrypted = self.cipher.encrypt(json.dumps(value).encode())
+        with self.connect() as db:
+            db.execute('INSERT OR REPLACE INTO connections VALUES(?,?,?)', (owner, source, encrypted))
 
+    def disconnect(self, owner, source):
+        with self.connect() as db:
+            db.execute('DELETE FROM connections WHERE owner=? AND source=?', (owner, source))
 
-def save_workspace(username, workspace_id, name, goal, role, title):
-    """Create a new stored workspace at version 1, or — if workspace_id
-    already belongs to this user — append a new version to it instead
-    (this is what 'Save' after a role switch/regenerate does: the same
-    live id, one more version, not a duplicate workspace)."""
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    with _LOCK:
-        data = _read_all()
-        existing = next((w for w in data.get(username, []) if w["id"] == workspace_id), None)
-        if existing:
-            next_version = len(existing["versions"]) + 1
-            existing["versions"].append({"version": next_version, "goal": goal, "role": role, "title": title, "created_at": now})
-            existing["current_version"] = next_version
-            if name:
-                existing["name"] = name
-            _write_all(data)
-            return existing
-        record = {
-            "id": workspace_id, "name": (name or "").strip() or title or "Untitled workspace",
-            "owner": username, "created_at": now, "current_version": 1,
-            "versions": [{"version": 1, "goal": goal, "role": role, "title": title, "created_at": now}],
-        }
-        data.setdefault(username, []).append(record)
-        _write_all(data)
-    return record
+    def views(self, owner):
+        with self.connect() as db:
+            rows = db.execute('SELECT id,spec FROM views WHERE owner=? ORDER BY rowid DESC', (owner,)).fetchall()
+        return [dict(id=r['id'], **json.loads(r['spec'])) for r in rows]
 
+    def save_view(self, owner, spec):
+        view_id = uuid.uuid4().hex
+        with self.connect() as db:
+            db.execute('INSERT INTO views VALUES(?,?,?)', (view_id, owner, json.dumps(spec)))
+        return view_id
 
-def rename_workspace(username, workspace_id, new_name):
-    new_name = (new_name or "").strip()
-    if not new_name:
-        return False
-    with _LOCK:
-        data = _read_all()
-        for w in data.get(username, []):
-            if w["id"] == workspace_id:
-                w["name"] = new_name
-                _write_all(data)
-                return True
-    return False
+    def delete_view(self, owner, view_id):
+        with self.connect() as db:
+            return db.execute('DELETE FROM views WHERE owner=? AND id=?', (owner, view_id)).rowcount > 0
 
+    def changes(self, owner, source):
+        with self.connect() as db:
+            rows = db.execute('SELECT record,value FROM changes WHERE owner=? AND source=?', (owner, source)).fetchall()
+        return {r['record']: json.loads(r['value']) for r in rows}
 
-def restore_version(username, workspace_id, version_number):
-    """Point current_version back at an earlier version. Returns that
-    version's {goal, role, title} dict (what the caller re-runs through
-    workspace_engine.generate_workspace), or None if not found."""
-    with _LOCK:
-        data = _read_all()
-        for w in data.get(username, []):
-            if w["id"] != workspace_id:
-                continue
-            for v in w["versions"]:
-                if v["version"] == version_number:
-                    w["current_version"] = version_number
-                    _write_all(data)
-                    return v
-    return None
+    def change(self, owner, source, record, value):
+        with self.connect() as db:
+            db.execute('INSERT OR REPLACE INTO changes VALUES(?,?,?,?)', (owner, source, record, json.dumps(value)))
 
+    def apps(self, owner):
+        with self.connect() as db:
+            rows = db.execute('SELECT id,spec FROM apps WHERE owner=? ORDER BY rowid DESC', (owner,)).fetchall()
+        return [dict(id=r['id'], **json.loads(r['spec'])) for r in rows]
 
-def current_version_of(username, workspace_id):
-    w = get_workspace(username, workspace_id)
-    if not w:
-        return None
-    return next((v for v in w["versions"] if v["version"] == w["current_version"]), None)
+    def app(self, owner, app_id):
+        with self.connect() as db:
+            row = db.execute('SELECT id,spec FROM apps WHERE owner=? AND id=?', (owner,app_id)).fetchone()
+        return dict(id=row['id'], **json.loads(row['spec'])) if row else None
+
+    def save_app(self, owner, spec, app_id=None):
+        if app_id:
+            with self.connect() as db:
+                if not db.execute('UPDATE apps SET spec=? WHERE owner=? AND id=?', (json.dumps(spec),owner,app_id)).rowcount:
+                    raise ValueError('App not found.')
+        else:
+            app_id = uuid.uuid4().hex
+            with self.connect() as db:
+                db.execute('INSERT INTO apps VALUES(?,?,?)', (app_id,owner,json.dumps(spec)))
+        return dict(id=app_id, **spec)
+
+    def delete_app(self, owner, app_id):
+        with self.connect() as db:
+            return db.execute('DELETE FROM apps WHERE owner=? AND id=?', (owner,app_id)).rowcount > 0
+
+    def copilot_history(self, owner, app_id):
+        with self.connect() as db:
+            rows = db.execute('SELECT turn FROM copilot_turns WHERE owner=? AND app=? ORDER BY id DESC LIMIT 12', (owner, app_id)).fetchall()
+        return [json.loads(row['turn']) for row in reversed(rows)]
+
+    def save_copilot_turn(self, owner, app_id, turn):
+        with self.connect() as db:
+            db.execute('INSERT INTO copilot_turns(owner,app,turn) VALUES(?,?,?)', (owner,app_id,json.dumps(turn)))
+            db.execute('DELETE FROM copilot_turns WHERE owner=? AND app=? AND id NOT IN (SELECT id FROM copilot_turns WHERE owner=? AND app=? ORDER BY id DESC LIMIT 12)', (owner,app_id,owner,app_id))
+
+    def clear_copilot(self, owner, app_id):
+        with self.connect() as db:
+            db.execute('DELETE FROM copilot_turns WHERE owner=? AND app=?', (owner,app_id))

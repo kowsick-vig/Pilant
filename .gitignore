@@ -15,3 +15,14 @@ rag_store/
 # artifacts (npm install && npm run build), never something to commit.
 frontend/node_modules/
 frontend/dist/
+
+# Pilant App Studio (workspace_api.py, port 5010) — an independent second
+# app alongside Studio (studio.py, port 5008); see REACT_WORKSPACE.md.
+frontend_appstudio/node_modules/
+frontend_appstudio/dist/
+.react-venv/
+# Per-user accounts, encrypted connections, and the local encryption/session
+# keys for the app above — never something to commit (see REACT_WORKSPACE.md's
+# "Storage and migration" section).
+.workspace/
+frontend_appstudio/*.tsbuildinfo
