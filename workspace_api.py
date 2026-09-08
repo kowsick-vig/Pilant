@@ -19,6 +19,29 @@ ROOT = Path(__file__).resolve().parent
 LAYOUTS = ['inbox', 'board', 'feed', 'table', 'focus']
 ROLES = ['Product & engineering', 'Customer support', 'Operations', 'Leadership']
 
+_STRUCTURED_QUERY_TOKEN = re.compile(r'\b\w+:\S+')
+
+
+def _literal_query(text):
+    """Strip any 'field:value'-shaped token out of a page's stored `query`.
+
+    app_composer.py's own system prompt tells the model query is "a literal
+    search term, not an instruction" — a screen's real filter is the
+    dedicated `status` field. The model doesn't always follow that: it can
+    emit something like query="status:Blocked" alongside status="Blocked".
+    Sources.fetch() (workspace_sources.py) then treats the WHOLE query as
+    literal text to find inside each record's JSON, and "status:blocked"
+    (no space around the colon) never appears in `{"status": "Blocked", ...}`
+    — so every row gets filtered out and the screen silently shows zero
+    records even though matching data exists (reproduced: a "Blocked"-status
+    screen over the Jira sample data, which has 6 genuinely blocked issues,
+    renders "Nothing here right now"). Stripping any such token before it
+    reaches fetch() leaves the real status filter (applied two lines below,
+    in app_data()) to do its job, without touching the AI prompt/schema or
+    the generic substring search genuinely free-text queries still rely on.
+    """
+    return _STRUCTURED_QUERY_TOKEN.sub('', text or '').strip()
+
 
 def read_environment():
     values = dict(os.environ)
@@ -358,7 +381,7 @@ def create_app(data_dir=None, config=None):
         if not spec: return jsonify(error='App not found.'),404
         page = next((p for p in spec['pages'] if p['id']==page_id),None)
         if not page: return jsonify(error='Screen not found.'),404
-        query = ' '.join(filter(None,[page['query'],request.args.get('q','')[:300]]))
+        query = ' '.join(filter(None,[_literal_query(page['query']),request.args.get('q','')[:300]]))
         rows = adapters().fetch(spec['source'],query,page['folder'])
         if page['status']: rows = [r for r in rows if r.get('status')==page['status']]
         return jsonify(records=rows, source=spec['source'], sample=SOURCES[spec['source']]['kind']=='sample',
