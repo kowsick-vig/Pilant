@@ -53,17 +53,18 @@ def starter_app(source, prompt, name='', role=''):
     if source == 'gmail':
         pages = [page('inbox','Inbox',layout), page('starred','Starred','inbox'), page('sent','Sent','inbox')]
         pages[1]['folder']='starred'; pages[2]['folder']='sent'
-    elif source in ['jira','github','helpdesk']:
+    elif source in ['jira','github','helpdesk','splunk']:
         pages = [page('work','My work',layout),page('all','All records','table')]
-        if any(word in text for word in ['blocked','urgent','priority']):
+        if any(word in text for word in ['blocked','urgent','priority','critical']):
             pages.insert(0,page('attention','Needs attention','focus'))
             if source == 'jira': pages[0]['status']='Blocked'
             if source == 'helpdesk': pages[0]['status']='escalated'
+            if source == 'splunk': pages[0]['status']='escalated'
     else:
         pages = [page('conversation','Conversation',layout),page('browse','Browse messages','table')]
     return validate_app({'title':name or f'My {SOURCES[source]["label"]}',
         'description':prompt,'pages':pages,'density':'compact' if 'compact' in text else 'comfortable',
-        'accent':'sage' if source == 'helpdesk' else 'blue' if source == 'github' else 'violet'},source,prompt)
+        'accent':'sage' if source == 'helpdesk' else 'blue' if source == 'github' else 'amber' if source == 'splunk' else 'violet'},source,prompt)
 
 
 def compose_app(source, prompt, name, role, records, api_key=None, previous=None):

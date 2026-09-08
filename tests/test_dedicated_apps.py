@@ -64,6 +64,23 @@ class DedicatedAppTests(unittest.TestCase):
         self.store.save_app('alice',{k:v for k,v in spec.items() if k!='id'},app['id'])
         oldest=self.a.get('/api/apps/'+app['id']+'/data/'+page['id']).json['records']
         self.assertEqual([r['id'] for r in oldest],list(reversed([r['id'] for r in newest])))
+    def test_splunk_sample_source_is_ready_immediately_with_crowded_data(self):
+        # Splunk added on request ("add splunk give me fake data's crowded
+        # data's") as a fifth sample-kind source, same shape as jira/helpdesk:
+        # no connection needed, own status set, own fixture module.
+        self.assertTrue(next(c for c in self.a.get('/api/connections').json['connections'] if c['id']=='splunk')['configured'])
+        app=self.build(source='splunk',prompt='Show critical and escalated alerts first, then everything in a table')
+        self.assertEqual(app['source'],'splunk')
+        self.assertEqual(app['pages'][0]['status'],'escalated')
+        data=self.a.get('/api/apps/'+app['id']+'/data/'+app['pages'][1]['id']).json
+        self.assertTrue(data['sample'])
+        self.assertGreaterEqual(len(data['records']),20)
+        self.assertTrue(all(r['source']=='splunk' for r in data['records']))
+        row=data['records'][0]
+        change=self.post(self.a,'/api/data/splunk/'+row['id']+'/actions',{'action':'status','value':'resolved'})
+        self.assertEqual(change.status_code,200)
+        self.assertEqual(self.a.get('/api/data/splunk/'+row['id']).json['record']['status'],'resolved')
+        self.assertEqual(self.b.get('/api/data/splunk/'+row['id']).json['record']['status'],row['status'])
     def test_two_apps_for_same_software_have_independent_purpose_and_navigation(self):
         a=self.build(prompt='Show blocked issues first in a focus screen')
         b=self.build(prompt='Give me a table to browse all issues')

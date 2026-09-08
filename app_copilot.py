@@ -88,7 +88,7 @@ def execute_plan(raw,records,source='jira',sample=True,scope='Sample records'):
     counts=Counter(str(field(r,plan['group_by']) or 'Unassigned') for r in found) if plan['group_by'] else Counter()
     points=sum(float(field(r,'story_points') or 0) for r in found)
     shown=found[:plan['limit']]
-    noun = 'issue' if source in ('jira','github') else 'ticket' if source=='helpdesk' else 'message' if source in ('gmail','slack') else 'record'
+    noun = 'issue' if source in ('jira','github') else 'ticket' if source=='helpdesk' else 'alert' if source=='splunk' else 'message' if source in ('gmail','slack') else 'record'
     summary=f'{len(found)} '+(noun+' matches' if len(found)==1 else noun+'s match')+' your request.'
     if len(shown)<len(found):summary+=f' Showing the first {len(shown)}.'
     if plan['metric']=='story_points':summary+=f' Total: {points:g} story points.'

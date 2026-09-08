@@ -395,6 +395,10 @@ small {
   background: #eaf2e9;
   color: #7da07d;
 }
+.splunk {
+  background: #fbf0e1;
+  color: #c08a3e;
+}
 .saved-nav {
   min-height: 40px;
 }

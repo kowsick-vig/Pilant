@@ -36,11 +36,12 @@ import {
   CircleHelp,
   Paperclip,
   FileText,
+  Activity,
 } from "lucide-react";
 import "./style.css";
 import "./dedicated.css";
 
-type Source = "gmail" | "github" | "slack" | "jira" | "helpdesk";
+type Source = "gmail" | "github" | "slack" | "jira" | "helpdesk" | "splunk";
 type Layout = "inbox" | "board" | "feed" | "table" | "focus";
 type User = {
   id: string;
@@ -84,6 +85,7 @@ const names: Record<Source, string> = {
   slack: "Slack",
   jira: "Jira",
   helpdesk: "Helpdesk",
+  splunk: "Splunk",
 };
 const sourceIcons = {
   gmail: Mail,
@@ -91,6 +93,7 @@ const sourceIcons = {
   slack: MessageSquare,
   jira: Columns3,
   helpdesk: Ticket,
+  splunk: Activity,
 };
 const layouts: { id: Layout; name: string; icon: typeof Inbox }[] = [
   { id: "inbox", name: "Inbox", icon: Inbox },
@@ -842,7 +845,7 @@ function GeneratedApp({
           >
             <SourceIcon source={app.source} small />
             <span>Powered by {names[app.source]}</span>
-            {["jira", "helpdesk"].includes(app.source) && <small>Sample</small>}
+            {["jira", "helpdesk", "splunk"].includes(app.source) && <small>Sample</small>}
           </button>
           <button
             className="secondary"
@@ -909,7 +912,7 @@ function GeneratedApp({
               <br />
               <small>
                 {connection?.account ||
-                  (["jira", "helpdesk"].includes(app.source)
+                  (["jira", "helpdesk", "splunk"].includes(app.source)
                     ? "Private sample changes"
                     : "Your connected account")}
               </small>
@@ -1265,7 +1268,7 @@ function AppCopilot({
       <div className="copilot-source">
         <SourceIcon source={source} small />
         <span>{names[source] || source} data for this app</span>
-        <small>{["jira", "helpdesk"].includes(source) ? "Sample data" : "Connected data"}</small>
+        <small>{["jira", "helpdesk", "splunk"].includes(source) ? "Sample data" : "Connected data"}</small>
       </div>
       <div className="copilot-messages" aria-live="polite">
         {!turns.length && (
@@ -1463,7 +1466,7 @@ function RecordView({
               className="board-column"
               key={s}
               onDragOver={(e) => {
-                if (dragged && ["jira", "helpdesk"].includes(dragged.source))
+                if (dragged && ["jira", "helpdesk", "splunk"].includes(dragged.source))
                   e.preventDefault();
               }}
               onDrop={(e) => {
@@ -1486,7 +1489,7 @@ function RecordView({
                     <button
                       className="issue-card"
                       key={row.source + row.id}
-                      draggable={["jira", "helpdesk"].includes(row.source)}
+                      draggable={["jira", "helpdesk", "splunk"].includes(row.source)}
                       onDragStart={() => setDragged(row)}
                       onDragEnd={() => setDragged(null)}
                       onClick={() => onSelect(row)}
@@ -1775,7 +1778,9 @@ function Detail({
   const statusOptions =
     r.source === "jira"
       ? ["To Do", "In Progress", "In Review", "Blocked", "Done"]
-      : ["open", "in_progress", "escalated", "resolved"];
+      : r.source === "splunk"
+        ? ["new", "investigating", "escalated", "resolved"]
+        : ["open", "in_progress", "escalated", "resolved"];
   return (
     <section className="detail-panel" aria-label="Record details">
       <div className="detail-toolbar">
@@ -1880,7 +1885,7 @@ function Detail({
             <ExternalLink size={14} />
           </a>
         )}
-        {["jira", "helpdesk"].includes(r.source) && (
+        {["jira", "helpdesk", "splunk"].includes(r.source) && (
           <div className="detail-actions">
             <label>
               Move to
