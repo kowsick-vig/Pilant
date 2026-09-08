@@ -27,6 +27,8 @@ every other read/write in this app already uses.
 
 JIRA_STATUSES = ['To Do', 'In Progress', 'In Review', 'Blocked', 'Done']
 JIRA_PRIORITIES = ['Lowest', 'Low', 'Medium', 'High', 'Highest']
+SPLUNK_STATUSES = ['new', 'investigating', 'escalated', 'resolved']
+SPLUNK_SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational']
 
 RISK_READ, RISK_WRITE, RISK_MESSAGE = 'read', 'write', 'message'
 
@@ -44,6 +46,15 @@ def _as_list(value, allowed, name):
             raise ValueError(f'Unsupported {name}: {v!r}.')
         matched.append(hit)
     return matched
+
+
+def _one_of(value, allowed, name):
+    if not isinstance(value, str):
+        raise ValueError(f'{name} is required.')
+    hit = next((a for a in allowed if a.lower() == value.strip().lower()), None)
+    if not hit:
+        raise ValueError(f'Unsupported {name}: {value!r}.')
+    return hit
 
 
 def _text(value, name, max_len, required=True):
@@ -153,6 +164,77 @@ def _execute_gmail_draft(sources, clean):
     return sources.gmail_create_draft(clean['assigneeName'], clean['subject'], clean['body'])
 
 
+def _validate_search_events(raw):
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid input.')
+    unassigned = raw.get('unassigned')
+    if unassigned is not None and not isinstance(unassigned, bool):
+        raise ValueError('unassigned must be true or false.')
+    return {
+        'severity': _as_list(raw.get('severity'), SPLUNK_SEVERITIES, 'severity'),
+        'status': _as_list(raw.get('status'), SPLUNK_STATUSES, 'status'),
+        'unassigned': unassigned,
+    }
+
+
+def _execute_search_events(sources, clean):
+    rows = sources.fetch('splunk')
+
+    def keep(row):
+        d = row.get('detail') or {}
+        severity_ok = not clean['severity'] or d.get('severity') in clean['severity']
+        status_ok = not clean['status'] or d.get('status') in clean['status']
+        # When both a severity and a status filter are given, treat them as
+        # alternative signals of urgency ("critical OR escalated") rather
+        # than compounding requirements -- an already-escalated event and a
+        # newly-triggered critical one are both worth surfacing, and
+        # requiring both at once would silently return nothing for the
+        # natural-language goal this filter is built from. With only one of
+        # the two given, that one must match (the other is trivially true).
+        urgent = (severity_ok or status_ok) if (clean['severity'] and clean['status']) else (severity_ok and status_ok)
+        if not urgent:
+            return False
+        if clean['unassigned'] and d.get('owner') != 'Unassigned':
+            return False
+        return True
+
+    matches = [r for r in rows if keep(r)]
+    events = [{
+        'id': r['id'], 'title': r['title'], 'severity': (r.get('detail') or {}).get('severity'),
+        'status': (r.get('detail') or {}).get('status'), 'owner': (r.get('detail') or {}).get('owner'),
+        'triggerTime': (r.get('detail') or {}).get('trigger_time'),
+        'mitreTechnique': (r.get('detail') or {}).get('mitre_technique'),
+    } for r in matches]
+    return {'events': events, 'total': len(events)}
+
+
+def _validate_get_event(raw):
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid input.')
+    return {'eventId': _text(raw.get('eventId'), 'eventId', 40)}
+
+
+def _execute_get_event(sources, clean):
+    event = sources.detail('splunk', clean['eventId'])
+    if not event:
+        raise ValueError(f"No Splunk event found with id {clean['eventId']}.")
+    d = event.get('detail') or {}
+    return {'id': event['id'], 'title': event['title'], 'severity': d.get('severity'),
+        'status': d.get('status'), 'owner': d.get('owner'), 'triggerTime': d.get('trigger_time')}
+
+
+def _validate_assign_analyst(raw):
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid input.')
+    from connectors_splunk import ANALYSTS  # the only names an assignment may target
+    return {'eventId': _text(raw.get('eventId'), 'eventId', 40),
+        'analyst': _one_of(raw.get('analyst'), ANALYSTS, 'analyst')}
+
+
+def _execute_assign_analyst(sources, clean):
+    return sources.splunk_assign_analyst(clean['eventId'], clean['analyst'])
+
+
 TOOLS = {
     'jira.searchIssues': {
         'connected_system': 'jira', 'permission': 'jira.read', 'risk': RISK_READ, 'approval_required': False,
@@ -183,6 +265,22 @@ TOOLS = {
         'connected_system': 'gmail', 'permission': 'gmail.write', 'risk': RISK_MESSAGE, 'approval_required': True,
         'schema': {'assigneeName': 'display name the recipient address is derived from', 'subject': 'up to 200 characters', 'body': 'up to 4000 characters'},
         'validate': _validate_gmail_draft, 'execute': _execute_gmail_draft,
+    },
+    'splunk.searchEvents': {
+        'connected_system': 'splunk', 'permission': 'splunk.read', 'risk': RISK_READ, 'approval_required': False,
+        'schema': {'severity': f'one or more of {SPLUNK_SEVERITIES}', 'status': f'one or more of {SPLUNK_STATUSES}',
+            'unassigned': 'true to only match events with no analyst assigned'},
+        'validate': _validate_search_events, 'execute': _execute_search_events,
+    },
+    'splunk.getEvent': {
+        'connected_system': 'splunk', 'permission': 'splunk.read', 'risk': RISK_READ, 'approval_required': False,
+        'schema': {'eventId': 'e.g. "NE-30231"'},
+        'validate': _validate_get_event, 'execute': _execute_get_event,
+    },
+    'splunk.assignAnalyst': {
+        'connected_system': 'splunk', 'permission': 'splunk.write', 'risk': RISK_WRITE, 'approval_required': True,
+        'schema': {'eventId': 'e.g. "NE-30231"', 'analyst': 'one of the known analyst roster'},
+        'validate': _validate_assign_analyst, 'execute': _execute_assign_analyst,
     },
 }
 

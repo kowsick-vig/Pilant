@@ -22,10 +22,10 @@ from tool_registry import get_tool
 # restrict against yet. The check is still real and executed on every
 # call; it simply hasn't been asked to draw a distinction yet.
 PERMISSIONS_BY_ROLE = {
-    'Product & engineering': {'jira.read', 'jira.write', 'slack.write', 'gmail.write'},
-    'Customer support': {'jira.read', 'jira.write', 'slack.write', 'gmail.write'},
-    'Operations': {'jira.read', 'jira.write', 'slack.write', 'gmail.write'},
-    'Leadership': {'jira.read', 'jira.write', 'slack.write', 'gmail.write'},
+    'Product & engineering': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
+    'Customer support': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
+    'Operations': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
+    'Leadership': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
 }
 
 

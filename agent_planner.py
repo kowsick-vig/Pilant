@@ -1,4 +1,9 @@
-"""Goal -> structured, editable action plan for the Jira follow-up use case.
+"""Goal -> structured, editable action plan.
+
+Two use cases today, both built the same way -- `build_plan` for Jira
+follow-ups, `build_splunk_plan` for Splunk notable-event triage -- because
+the shape of "concretize targets deterministically, then draft text" is
+the same regardless of which connected system it targets.
 
 Two phases, deliberately:
 
@@ -154,4 +159,133 @@ def build_plan(store, sources, user, app_id, goal, api_key=None):
         tool=None, target=goal[:120], decision=None, connected_system='jira', result=note)
     saved['note'] = note
     saved['unassigned'] = [i['key'] for i in unassigned]
+    return saved
+
+
+def _extract_splunk_search_filters(goal):
+    text = goal.lower()
+    severity = ['critical'] if any(w in text for w in ['critical', 'urgent', 'severe']) else None
+    if 'high' in text:
+        severity = (severity or []) + ['high']
+    status = ['escalated'] if 'escalated' in text else None
+    unassigned = True if any(w in text for w in
+        ['unassigned', 'no assigned analyst', 'unowned', 'without an analyst', 'no analyst', 'not assigned']) else None
+    return {'severity': severity, 'status': status, 'unassigned': unassigned}
+
+
+def _splunk_fallback_drafts(events, assignments):
+    drafts = []
+    for event in events:
+        analyst = assignments[event['id']]
+        drafts.append({
+            'eventId': event['id'],
+            'message': f"Hi {analyst}, you've been assigned {event['id']} ({event['title']}), a "
+                       f"{(event.get('severity') or '').lower()} severity notable event triggered "
+                       f"{event.get('triggerTime') or 'recently'}. Could you triage it and share a status update?",
+        })
+    return drafts
+
+
+def _splunk_ai_drafts(goal, events, assignments, api_key):
+    if not api_key or not events:
+        return _splunk_fallback_drafts(events, assignments)
+    import anthropic
+    valid_ids = [e['id'] for e in events]
+    schema = {'type': 'object', 'properties': {'drafts': {'type': 'array', 'maxItems': MAX_ISSUES, 'items': {
+        'type': 'object', 'properties': {
+            'eventId': {'type': 'string', 'enum': valid_ids},
+            'message': {'type': 'string'}},
+        'required': ['eventId', 'message'], 'additionalProperties': False}}},
+        'required': ['drafts'], 'additionalProperties': False}
+    try:
+        client = anthropic.Anthropic(api_key=api_key, timeout=30, max_retries=0)
+        payload = [{'eventId': e['id'], 'title': e['title'], 'severity': e.get('severity'),
+            'mitreTechnique': e.get('mitreTechnique'), 'analyst': assignments[e['id']]} for e in events]
+        response = client.messages.create(model='claude-haiku-4-5', max_tokens=1200,
+            system='Draft a short triage-request message for each Splunk notable event given, addressed to the '
+                'analyst it has already been assigned to. You are drafting TEXT ONLY: you do not choose which '
+                'events to act on or who is assigned (already fixed by the server) -- these drafts are never sent '
+                'automatically, a human reviews and approves each one before anything is sent. Be specific: '
+                'mention the event id, its severity, and ask for triage status or an ETA. Keep each under 400 '
+                'characters, professional, direct. The event data given is real; never invent a different event, '
+                'analyst, or fact, and never draft for an event id not in the list provided.',
+            messages=[{'role': 'user', 'content': json.dumps({'goal': goal, 'events': payload})}],
+            tools=[{'name': 'draft_triage_requests', 'description': 'Draft a triage-request message for each given event', 'input_schema': schema}],
+            tool_choice={'type': 'tool', 'name': 'draft_triage_requests'})
+        candidate = next(b.input for b in response.content if b.type == 'tool_use')
+        by_id = {}
+        valid = set(valid_ids)
+        for d in candidate.get('drafts', []):
+            if not isinstance(d, dict):
+                continue
+            key = d.get('eventId')
+            message = str(d.get('message') or '').strip()[:2000]
+            if key in valid and message:
+                by_id[key] = {'eventId': key, 'message': message}
+        fallback_by_id = {d['eventId']: d for d in _splunk_fallback_drafts(events, assignments)}
+        return [by_id.get(e['id']) or fallback_by_id[e['id']] for e in events]
+    except Exception:
+        return _splunk_fallback_drafts(events, assignments)
+
+
+def build_splunk_plan(store, sources, user, app_id, goal, api_key=None):
+    """Goal -> plan for the Splunk use case: find critical/escalated notable
+    events with no assigned analyst, assign one (deterministic round-robin
+    over the fixed analyst roster -- never the model's choice), and draft a
+    triage-request message to send them. Same two-phase, human-approval-
+    gated shape as build_plan above."""
+    owner = user['id']
+    goal = re.sub(r'\s+', ' ', goal).strip()[:2000]
+    if len(goal) < 10:
+        raise ValueError('Describe the automation goal in a little more detail.')
+    if not policy_engine.has_permission(user['role'], 'splunk.searchEvents'):
+        raise ValueError('You do not have permission to search Splunk.')
+
+    search_tool = get_tool('splunk.searchEvents')
+    clean = search_tool['validate'](_extract_splunk_search_filters(goal))
+    search_result = search_tool['execute'](sources, clean)
+    events = search_result['events'][:MAX_ISSUES]
+
+    steps = [{
+        'tool': 'splunk.searchEvents', 'label': 'Search for the matching Splunk notable events', 'risk': 'read',
+        'approval_required': False, 'status': 'completed', 'input': clean, 'result': search_result, 'error': None,
+    }]
+
+    from connectors_splunk import ANALYSTS
+    slack_connected = bool(store.connection(owner, 'slack'))
+    assignments = {e['id']: ANALYSTS[i % len(ANALYSTS)] for i, e in enumerate(events)}
+    drafts_by_id = {d['eventId']: d for d in _splunk_ai_drafts(goal, events, assignments, api_key)} if events else {}
+
+    for event in events:
+        draft = drafts_by_id.get(event['id'])
+        if not draft:
+            continue
+        analyst = assignments[event['id']]
+        steps.append({
+            'tool': 'splunk.assignAnalyst', 'label': f"Assign {event['id']} to {analyst}",
+            'risk': 'write', 'approval_required': True, 'status': 'pending',
+            'input': {'eventId': event['id'], 'analyst': analyst}, 'result': None, 'error': None,
+        })
+        if slack_connected:
+            steps.append({
+                'tool': 'slack.sendMessage', 'label': f"Message {analyst} about {event['id']}",
+                'risk': 'message', 'approval_required': True, 'status': 'pending',
+                'input': {'text': draft['message'], 'context': event['id']}, 'result': None, 'error': None,
+            })
+        else:
+            steps.append({
+                'tool': 'gmail.createDraft', 'label': f"Draft an email to {analyst} about {event['id']}",
+                'risk': 'message', 'approval_required': True, 'status': 'pending',
+                'input': {'assigneeName': analyst, 'subject': f"Please triage {event['id']}",
+                    'body': draft['message']}, 'result': None, 'error': None,
+            })
+
+    mode = 'ai' if api_key and events else 'basic'
+    status = 'awaiting_approval' if any(s['status'] == 'pending' for s in steps) else 'completed'
+    saved = store.save_agent_plan(owner, app_id, goal, mode, status, steps)
+
+    note = f"{len(events)} event(s) found, {len(steps) - 1} action(s) drafted."
+    audit_logger.record(store, owner, app_id, saved['id'], None, actor=owner, action='create_plan',
+        tool=None, target=goal[:120], decision=None, connected_system='splunk', result=note)
+    saved['note'] = note
     return saved

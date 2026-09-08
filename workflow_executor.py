@@ -137,7 +137,8 @@ def set_paused(store, user, app_id, plan_id, paused):
 
 
 def _target(step):
-    return step['input'].get('issueKey') or step['input'].get('assigneeName') or step['input'].get('context') or ''
+    return (step['input'].get('issueKey') or step['input'].get('eventId') or
+        step['input'].get('assigneeName') or step['input'].get('context') or '')
 
 
 def _summarize(result):
@@ -147,10 +148,14 @@ def _summarize(result):
         return 'Simulated (not connected): ' + str(result.get('note', ''))[:250]
     if 'issues' in result:
         return f"{result.get('total', len(result['issues']))} issue(s) found."
+    if 'events' in result:
+        return f"{result.get('total', len(result['events']))} event(s) found."
     if 'comment' in result:
         return f"Comment added to {result.get('issueKey', '')}."
     if 'assignee' in result:
         return f"Reassigned {result.get('issueKey', '')} to {result.get('assignee', '')}."
+    if 'analyst' in result:
+        return f"Assigned {result.get('eventId', '')} to {result.get('analyst', '')}."
     if 'ts' in result or 'channel' in result:
         return f"Message sent to #{result.get('channel', '')}."
     if 'draft_id' in result or 'to' in result:

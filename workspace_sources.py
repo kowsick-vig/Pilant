@@ -235,6 +235,16 @@ class Sources:
         self.store.change(self.owner, 'jira', key, {'assignee': assignee})
         return {'issueKey': key, 'assignee': assignee}
 
+    def splunk_assign_analyst(self, id, analyst):
+        """Assign a Splunk notable event to an analyst. Same per-owner
+        overlay pattern as jira_update_assignee -- never mutates the shared
+        fictional event fixture, just this owner's view of it."""
+        event = self.detail('splunk', id)
+        if not event:
+            raise ValueError('Event not found.')
+        self.store.change(self.owner, 'splunk', id, {'owner': analyst})
+        return {'eventId': id, 'analyst': analyst}
+
     def slack_send_message(self, text, context=''):
         """Post to the owner's configured Slack channel. The destination is
         always the server-known connection, never a value the caller (or a

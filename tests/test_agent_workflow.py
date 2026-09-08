@@ -68,7 +68,10 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertTrue(any(s['tool'] == 'gmail.createDraft' for s in write_steps))
         self.assertFalse(any(s['tool'] == 'slack.sendMessage' for s in write_steps))
 
-    def test_automate_mode_is_jira_only_for_now(self):
+    def test_automate_mode_rejects_sources_without_a_planner(self):
+        # Jira and Splunk have real agent_planner.py builders (see
+        # tests/test_agent_workflow_splunk.py for the Splunk use case);
+        # every other sample/live source still has none wired up.
         app_id = self.build_app(source='helpdesk')
         r = self.mutate(self.a, f'/api/apps/{app_id}/agent/plans', {'goal': GOAL})
         self.assertEqual(r.status_code, 400)

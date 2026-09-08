@@ -102,6 +102,13 @@ const names: Record<Source, string> = {
   splunk: "Splunk",
   crm: "CRM",
 };
+// Sources with a real agent_planner.py builder wired up server-side.
+// Kept in sync with workspace_api.py's create_agent_plan `builder` map.
+const AUTOMATE_SOURCES: Source[] = ["jira", "splunk"];
+const automateGoalExamples: Partial<Record<Source, string>> = {
+  jira: "Find urgent blocked issues, identify the assignees, draft follow-up messages and request updates.",
+  splunk: "Find critical or escalated notable events with no assigned analyst, draft an assignment and request triage.",
+};
 const sourceIcons = {
   gmail: Mail,
   github: Github,
@@ -1351,10 +1358,10 @@ function AppCopilot({
           role="tab"
           aria-selected={panelMode === "automate"}
           className={panelMode === "automate" ? "active" : ""}
-          disabled={source !== "jira"}
+          disabled={!AUTOMATE_SOURCES.includes(source)}
           title={
-            source !== "jira"
-              ? "Automate mode currently supports Jira apps"
+            !AUTOMATE_SOURCES.includes(source)
+              ? "Automate mode currently supports Jira and Splunk apps"
               : ""
           }
           onClick={() => setPanelMode("automate")}
@@ -1368,7 +1375,7 @@ function AppCopilot({
         <small>{["jira", "helpdesk", "splunk", "crm"].includes(source) ? "Sample data" : "Connected data"}</small>
       </div>
       {panelMode === "automate" ? (
-        <AgentAutomate appId={appId} onNotice={onNotice} />
+        <AgentAutomate appId={appId} source={source} onNotice={onNotice} />
       ) : (
       <>
       <div className="copilot-messages" aria-live="polite">
@@ -1485,9 +1492,11 @@ function AppCopilot({
 }
 function AgentAutomate({
   appId,
+  source,
   onNotice,
 }: {
   appId: string;
+  source: Source;
   onNotice: (m: string) => void;
 }) {
   const [goal, setGoal] = useState("");
@@ -1645,8 +1654,9 @@ function AgentAutomate({
   const pendingCount =
     plan?.steps.filter((s) => s.status === "pending").length || 0;
   const draftFields = (step: AgentStep) => {
-    const keys =
-      step.tool === "jira.updateAssignee" ? ["assignee"] : ["comment", "text", "body", "subject"];
+    const keys = ["jira.updateAssignee", "splunk.assignAnalyst"].includes(step.tool)
+      ? ["assignee", "analyst"]
+      : ["comment", "text", "body", "subject"];
     return Object.entries(step.input).filter(
       ([k, v]) => keys.includes(k) && v !== null && v !== "",
     );
@@ -1663,7 +1673,10 @@ function AgentAutomate({
               maxLength={2000}
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
-              placeholder="Find urgent blocked issues, identify the assignees, draft follow-up messages and request updates."
+              placeholder={
+                automateGoalExamples[source] ||
+                "Describe the goal for the agent to plan and run."
+              }
               disabled={busyPlan}
             />
           </label>

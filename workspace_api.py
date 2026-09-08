@@ -465,16 +465,17 @@ def create_app(data_dir=None, config=None):
     @app.post('/api/apps/<app_id>/agent/plans')
     @authenticated
     def create_agent_plan(app_id):
-        from agent_planner import build_plan
+        import agent_planner
         spec = owned_app(app_id)
         if not spec: return jsonify(error='App not found.'), 404
-        if spec['source'] != 'jira':
-            raise ValueError('Automate mode currently supports Jira apps. Ask mode still works for every source.')
+        builder = {'jira': agent_planner.build_plan, 'splunk': agent_planner.build_splunk_plan}.get(spec['source'])
+        if not builder:
+            raise ValueError('Automate mode currently supports Jira and Splunk apps. Ask mode still works for every source.')
         if agent_rate_limited(session['user']):
             return jsonify(error='Too many automation requests. Please wait a moment and try again.'), 429
         body = request.get_json(silent=True) or {}
         goal = str(body.get('goal') or '').strip()[:2000]
-        plan = build_plan(store, adapters(), store.user(session['user']), app_id, goal, env.get('ANTHROPIC_API_KEY'))
+        plan = builder(store, adapters(), store.user(session['user']), app_id, goal, env.get('ANTHROPIC_API_KEY'))
         return jsonify(plan=plan)
 
     @app.get('/api/apps/<app_id>/agent/plans/<plan_id>')

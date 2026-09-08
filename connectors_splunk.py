@@ -11,6 +11,10 @@ from datetime import datetime, timedelta, timezone
 
 STATUSES = ['new', 'investigating', 'escalated', 'resolved']
 SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational']
+# The known analyst pool notable events rotate through below. Exported so
+# agent_planner.py can deterministically round-robin an assignment across
+# this same fixed roster rather than inventing or duplicating the list.
+ANALYSTS = ['Nina Alvarez', 'Tomás Reyes', 'Grace Lin', 'Devon Cole']
 
 
 def get_events(now=None):
@@ -26,7 +30,7 @@ def get_events(now=None):
         'k8s-node-11', 'proxy-edge-03', 'ad-dc-02', 'app-prod-02', 'storage-01',
         'vpn-gateway-01', 'web-prod-05', 'app-prod-04', 'dns-internal-01', 'web-prod-02',
         'fw-edge-02', 'app-prod-09', 'ci-runner-02', 'db-prod-03']
-    analysts = ['Nina Alvarez', 'Tomás Reyes', 'Grace Lin', 'Devon Cole', None]
+    analysts = ANALYSTS + [None]
     # (title, severity, status, mitre_technique, hours_ago, event_count, index)
     examples = [
         ('Excessive Failed Logins From Single Source', 'high', 'investigating', 'T1110 Brute Force', 1.5, 342, 'security'),
