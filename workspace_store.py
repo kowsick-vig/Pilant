@@ -4,6 +4,7 @@ import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from cryptography.fernet import Fernet
 
@@ -33,6 +34,16 @@ class Store:
                 CREATE TABLE IF NOT EXISTS copilot_turns (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, app TEXT, turn TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS changes (owner TEXT, source TEXT, record TEXT, value TEXT,
                     PRIMARY KEY(owner, source, record));
+                CREATE TABLE IF NOT EXISTS agent_plans (id TEXT PRIMARY KEY, owner TEXT, app TEXT,
+                    goal TEXT NOT NULL, status TEXT NOT NULL, mode TEXT NOT NULL,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS agent_steps (id TEXT PRIMARY KEY, plan_id TEXT, owner TEXT,
+                    position INTEGER NOT NULL, tool TEXT NOT NULL, label TEXT NOT NULL, risk TEXT NOT NULL,
+                    approval_required INTEGER NOT NULL, status TEXT NOT NULL, input TEXT NOT NULL,
+                    result TEXT, error TEXT, idempotency_key TEXT);
+                CREATE TABLE IF NOT EXISTS agent_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT,
+                    app TEXT, plan_id TEXT, step_id TEXT, actor TEXT NOT NULL, action TEXT NOT NULL,
+                    tool TEXT, target TEXT, decision TEXT, connected_system TEXT, result TEXT, at TEXT NOT NULL);
             ''')
         os.chmod(self.path, 0o600)
 
@@ -95,8 +106,16 @@ class Store:
         return {r['record']: json.loads(r['value']) for r in rows}
 
     def change(self, owner, source, record, value):
+        # Merge (not replace) so independent overrides on the same record --
+        # e.g. a status change, an agent-added comment, and a reassignment --
+        # can coexist instead of the latest write silently discarding the
+        # others. Existing single-field callers (status) are unaffected:
+        # merging a dict with one key into itself just overwrites that key.
         with self.connect() as db:
-            db.execute('INSERT OR REPLACE INTO changes VALUES(?,?,?,?)', (owner, source, record, json.dumps(value)))
+            existing = db.execute('SELECT value FROM changes WHERE owner=? AND source=? AND record=?',
+                (owner, source, record)).fetchone()
+            merged = {**(json.loads(existing['value']) if existing else {}), **value}
+            db.execute('INSERT OR REPLACE INTO changes VALUES(?,?,?,?)', (owner, source, record, json.dumps(merged)))
 
     def apps(self, owner):
         with self.connect() as db:
@@ -136,3 +155,78 @@ class Store:
     def clear_copilot(self, owner, app_id):
         with self.connect() as db:
             db.execute('DELETE FROM copilot_turns WHERE owner=? AND app=?', (owner,app_id))
+
+    # -- Agent workflow automation: plans, their steps, and an immutable audit trail. --
+
+    def _step_row(self, row):
+        return {'id': row['id'], 'tool': row['tool'], 'label': row['label'], 'risk': row['risk'],
+            'approval_required': bool(row['approval_required']), 'status': row['status'],
+            'input': json.loads(row['input']), 'result': json.loads(row['result']) if row['result'] else None,
+            'error': row['error']}
+
+    def save_agent_plan(self, owner, app_id, goal, mode, status, steps):
+        plan_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            db.execute('INSERT INTO agent_plans VALUES(?,?,?,?,?,?,?,?)',
+                (plan_id, owner, app_id, goal, status, mode, now, now))
+            for i, s in enumerate(steps):
+                db.execute('INSERT INTO agent_steps VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (uuid.uuid4().hex, plan_id, owner, i, s['tool'], s['label'], s['risk'],
+                     1 if s['approval_required'] else 0, s['status'], json.dumps(s['input']),
+                     json.dumps(s['result']) if s.get('result') is not None else None, s.get('error'), None))
+        return self.agent_plan(owner, plan_id)
+
+    def agent_plan(self, owner, plan_id):
+        with self.connect() as db:
+            prow = db.execute('SELECT * FROM agent_plans WHERE owner=? AND id=?', (owner, plan_id)).fetchone()
+            if not prow: return None
+            srows = db.execute('SELECT * FROM agent_steps WHERE owner=? AND plan_id=? ORDER BY position',
+                (owner, plan_id)).fetchall()
+        return {'id': prow['id'], 'app': prow['app'], 'goal': prow['goal'], 'status': prow['status'],
+            'mode': prow['mode'], 'created_at': prow['created_at'], 'updated_at': prow['updated_at'],
+            'steps': [self._step_row(r) for r in srows]}
+
+    def agent_plans(self, owner, app_id):
+        with self.connect() as db:
+            prows = db.execute('SELECT id FROM agent_plans WHERE owner=? AND app=? ORDER BY created_at DESC',
+                (owner, app_id)).fetchall()
+        return [self.agent_plan(owner, r['id']) for r in prows]
+
+    def agent_step(self, owner, plan_id, step_id):
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM agent_steps WHERE owner=? AND plan_id=? AND id=?',
+                (owner, plan_id, step_id)).fetchone()
+        return self._step_row(row) if row else None
+
+    def update_agent_step(self, owner, plan_id, step_id, fields):
+        allowed = {'status', 'input', 'result', 'error', 'idempotency_key'}
+        sets, values = [], []
+        for k, v in fields.items():
+            if k not in allowed: continue
+            sets.append(f'{k}=?')
+            values.append(json.dumps(v) if k in ('input', 'result') and v is not None else v)
+        if not sets: return
+        values += [owner, plan_id, step_id]
+        with self.connect() as db:
+            db.execute(f'UPDATE agent_steps SET {",".join(sets)} WHERE owner=? AND plan_id=? AND id=?', values)
+
+    def update_agent_plan_status(self, owner, plan_id, status):
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            db.execute('UPDATE agent_plans SET status=?, updated_at=? WHERE owner=? AND id=?',
+                (status, now, owner, plan_id))
+
+    def save_audit_entry(self, owner, entry):
+        with self.connect() as db:
+            db.execute('INSERT INTO agent_audit(owner,app,plan_id,step_id,actor,action,tool,target,'
+                'decision,connected_system,result,at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                (owner, entry.get('app'), entry.get('plan_id'), entry.get('step_id'), entry['actor'],
+                 entry['action'], entry.get('tool'), entry.get('target'), entry.get('decision'),
+                 entry.get('connected_system'), entry.get('result'), entry['at']))
+
+    def audit_trail(self, owner, app_id, limit=200):
+        with self.connect() as db:
+            rows = db.execute('SELECT * FROM agent_audit WHERE owner=? AND app=? ORDER BY id DESC LIMIT ?',
+                (owner, app_id, limit)).fetchall()
+        return [dict(r) for r in rows]

@@ -72,7 +72,20 @@ def create_app(data_dir=None, config=None):
     oauth = {'client_id': env.get('GMAIL_CLIENT_ID', ''), 'client_secret': env.get('GMAIL_CLIENT_SECRET', '')}
     oauth_redirect = env.get('WORKSPACE_GMAIL_REDIRECT_URI', 'http://127.0.0.1:5010/api/oauth/gmail/callback')
     attempts = {}
+    agent_attempts = {}
     dummy_hash = generate_password_hash(secrets.token_hex(20))
+
+    def agent_rate_limited(owner):
+        # Same shape as the login attempt limiter above, applied to
+        # plan/step actions per owner so a runaway client (or a scripted
+        # approval loop) can't hammer connected write/message tools.
+        now = time.time()
+        recent = [t for t in agent_attempts.get(owner, []) if now - t < 60]
+        agent_attempts[owner] = recent
+        if len(recent) >= 40:
+            return True
+        recent.append(now)
+        return False
 
     def csrf():
         if 'csrf' not in session: session['csrf'] = secrets.token_urlsafe(32)
@@ -427,6 +440,123 @@ def create_app(data_dir=None, config=None):
             'mode':result['mode'],'at':datetime.now(timezone.utc).isoformat()}
         store.save_copilot_turn(session['user'], app_id, turn)
         return jsonify(turn=turn,result=result)
+
+    # -- Agent workflow automation --------------------------------------
+    # User goal -> plan -> permission/policy checks -> human approval when
+    # required -> connected-app tool call -> interface update -> audit log.
+    # Every route below re-derives the app/plan from the store scoped to
+    # session['user'] -- a client can never address another owner's plan
+    # by guessing an id, the same guarantee every other /api/apps/<id>/*
+    # route in this file already gives.
+
+    def owned_app(app_id):
+        return store.app(session['user'], app_id)
+
+    def owned_plan(app_id, plan_id):
+        plan = store.agent_plan(session['user'], plan_id)
+        return plan if plan and plan['app'] == app_id else None
+
+    @app.get('/api/apps/<app_id>/agent/plans')
+    @authenticated
+    def list_agent_plans(app_id):
+        if not owned_app(app_id): return jsonify(error='App not found.'), 404
+        return jsonify(plans=store.agent_plans(session['user'], app_id))
+
+    @app.post('/api/apps/<app_id>/agent/plans')
+    @authenticated
+    def create_agent_plan(app_id):
+        from agent_planner import build_plan
+        spec = owned_app(app_id)
+        if not spec: return jsonify(error='App not found.'), 404
+        if spec['source'] != 'jira':
+            raise ValueError('Automate mode currently supports Jira apps. Ask mode still works for every source.')
+        if agent_rate_limited(session['user']):
+            return jsonify(error='Too many automation requests. Please wait a moment and try again.'), 429
+        body = request.get_json(silent=True) or {}
+        goal = str(body.get('goal') or '').strip()[:2000]
+        plan = build_plan(store, adapters(), store.user(session['user']), app_id, goal, env.get('ANTHROPIC_API_KEY'))
+        return jsonify(plan=plan)
+
+    @app.get('/api/apps/<app_id>/agent/plans/<plan_id>')
+    @authenticated
+    def get_agent_plan(app_id, plan_id):
+        plan = owned_plan(app_id, plan_id)
+        if not plan: return jsonify(error='Plan not found.'), 404
+        return jsonify(plan=plan)
+
+    @app.patch('/api/apps/<app_id>/agent/plans/<plan_id>/steps/<step_id>')
+    @authenticated
+    def edit_agent_step(app_id, plan_id, step_id):
+        if not owned_plan(app_id, plan_id): return jsonify(error='Plan not found.'), 404
+        step = store.agent_step(session['user'], plan_id, step_id)
+        if not step: return jsonify(error='Step not found.'), 404
+        if step['status'] != 'pending': raise ValueError('Only a pending step can be edited.')
+        from tool_registry import get_tool
+        body = request.get_json(silent=True) or {}
+        candidate_input = body.get('input')
+        if not isinstance(candidate_input, dict): raise ValueError('Invalid step input.')
+        merged = {**step['input'], **candidate_input}
+        clean = get_tool(step['tool'])['validate'](merged)  # re-validates before it's ever stored
+        store.update_agent_step(session['user'], plan_id, step_id, {'input': clean})
+        return jsonify(step=store.agent_step(session['user'], plan_id, step_id))
+
+    @app.post('/api/apps/<app_id>/agent/plans/<plan_id>/steps/<step_id>/approve')
+    @authenticated
+    def approve_agent_step(app_id, plan_id, step_id):
+        import workflow_executor
+        if not owned_plan(app_id, plan_id): return jsonify(error='Plan not found.'), 404
+        if agent_rate_limited(session['user']):
+            return jsonify(error='Too many automation requests. Please wait a moment and try again.'), 429
+        step = workflow_executor.approve_and_run(store, adapters(), store.user(session['user']), app_id, plan_id, step_id)
+        return jsonify(step=step)
+
+    @app.post('/api/apps/<app_id>/agent/plans/<plan_id>/steps/<step_id>/reject')
+    @authenticated
+    def reject_agent_step(app_id, plan_id, step_id):
+        import approval_service
+        if not owned_plan(app_id, plan_id): return jsonify(error='Plan not found.'), 404
+        step = approval_service.decide(store, store.user(session['user']), app_id, plan_id, step_id, 'rejected')
+        return jsonify(step=step)
+
+    @app.post('/api/apps/<app_id>/agent/plans/<plan_id>/steps/<step_id>/retry')
+    @authenticated
+    def retry_agent_step(app_id, plan_id, step_id):
+        import workflow_executor
+        if not owned_plan(app_id, plan_id): return jsonify(error='Plan not found.'), 404
+        step = store.agent_step(session['user'], plan_id, step_id)
+        if not step: return jsonify(error='Step not found.'), 404
+        if step['status'] != 'failed': raise ValueError('Only a failed step can be retried.')
+        if agent_rate_limited(session['user']):
+            return jsonify(error='Too many automation requests. Please wait a moment and try again.'), 429
+        step = workflow_executor.execute_step(store, adapters(), store.user(session['user']), app_id, plan_id, step_id)
+        return jsonify(step=step)
+
+    @app.post('/api/apps/<app_id>/agent/plans/<plan_id>/pause')
+    @authenticated
+    def pause_agent_plan(app_id, plan_id):
+        import workflow_executor
+        if not owned_plan(app_id, plan_id): return jsonify(error='Plan not found.'), 404
+        return jsonify(plan=workflow_executor.set_paused(store, store.user(session['user']), app_id, plan_id, True))
+
+    @app.post('/api/apps/<app_id>/agent/plans/<plan_id>/resume')
+    @authenticated
+    def resume_agent_plan(app_id, plan_id):
+        import workflow_executor
+        if not owned_plan(app_id, plan_id): return jsonify(error='Plan not found.'), 404
+        return jsonify(plan=workflow_executor.set_paused(store, store.user(session['user']), app_id, plan_id, False))
+
+    @app.post('/api/apps/<app_id>/agent/plans/<plan_id>/cancel')
+    @authenticated
+    def cancel_agent_plan(app_id, plan_id):
+        import workflow_executor
+        if not owned_plan(app_id, plan_id): return jsonify(error='Plan not found.'), 404
+        return jsonify(plan=workflow_executor.cancel_plan(store, store.user(session['user']), app_id, plan_id))
+
+    @app.get('/api/apps/<app_id>/agent/audit')
+    @authenticated
+    def agent_audit(app_id):
+        if not owned_app(app_id): return jsonify(error='App not found.'), 404
+        return jsonify(entries=store.audit_trail(session['user'], app_id))
 
     @app.get('/', defaults={'path': ''})
     @app.get('/<path:path>')

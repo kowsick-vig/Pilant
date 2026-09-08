@@ -148,6 +148,13 @@ small {
   background: #f7f6fd;
   border-color: #d9d2f6;
 }
+.secondary.danger {
+  color: #c05c68;
+}
+.secondary.danger:hover:not(:disabled) {
+  background: #fbefef;
+  border-color: #eeccd1;
+}
 .wide {
   width: 100%;
   margin-top: 18px;
@@ -998,6 +1005,28 @@ small {
 .badge.unread {
   background: #edeafa;
   color: #9a88cc;
+}
+.badge.pending {
+  background: #f5f1e8;
+  color: #ad9760;
+}
+.badge.approved,
+.badge.running {
+  background: #eeeafa;
+  color: #a190cf;
+}
+.badge.completed {
+  background: #edf5f0;
+  color: #8aaf9a;
+}
+.badge.failed,
+.badge.rejected {
+  background: #fbefef;
+  color: #c58b95;
+}
+.badge.cancelled {
+  background: #f0f2f6;
+  color: #929caf;
 }
 .inbox-layout {
   display: grid;

@@ -38,6 +38,12 @@ import {
   FileText,
   Activity,
   Users,
+  Pause,
+  Play,
+  RotateCcw,
+  Ban,
+  Pencil,
+  Clock,
 } from "lucide-react";
 import "./style.css";
 import "./dedicated.css";
@@ -842,10 +848,10 @@ function GeneratedApp({
               className={`secondary copilot-toggle ${copilotOpen ? "active" : ""}`}
               onClick={() => setCopilotOpen(!copilotOpen)}
               aria-expanded={copilotOpen}
-              aria-label="Pilant Copilot"
+              aria-label="Pilant Agent"
             >
               <MessageSquare size={15} />
-              <span>Pilant Copilot</span>
+              <span>Pilant Agent</span>
             </button>
           )}
           <button
@@ -1063,6 +1069,7 @@ function GeneratedApp({
             source={app.source}
             onClose={() => setCopilotOpen(false)}
             onClear={() => setCopilotResult(null)}
+            onNotice={setNotice}
             onResult={(r) => {
               setCopilotResult(r);
               setSelected(null);
@@ -1177,19 +1184,73 @@ type CopilotResult = {
     filters: { field: string; operator: string; value: unknown }[];
   };
 };
+type AgentStepStatus =
+  | "pending"
+  | "approved"
+  | "running"
+  | "completed"
+  | "failed"
+  | "rejected"
+  | "cancelled";
+type AgentStep = {
+  id: string;
+  tool: string;
+  label: string;
+  risk: "read" | "write" | "message";
+  approval_required: boolean;
+  status: AgentStepStatus;
+  input: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  error: string | null;
+};
+type AgentPlan = {
+  id: string;
+  app: string;
+  goal: string;
+  status:
+    | "planning"
+    | "awaiting_approval"
+    | "running"
+    | "paused"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  mode: string;
+  created_at: string;
+  updated_at: string;
+  steps: AgentStep[];
+  note?: string;
+  unassigned?: string[];
+};
+type AuditEntry = {
+  id: number;
+  plan_id: string | null;
+  step_id: string | null;
+  actor: string;
+  action: string;
+  tool: string | null;
+  target: string | null;
+  decision: string | null;
+  connected_system: string | null;
+  result: string | null;
+  at: string;
+};
 function AppCopilot({
   appId,
   source,
   onResult,
   onClose,
   onClear,
+  onNotice,
 }: {
   appId: string;
   source: Source;
   onResult: (r: CopilotResult) => void;
   onClose: () => void;
   onClear: () => void;
+  onNotice: (m: string) => void;
 }) {
+  const [panelMode, setPanelMode] = useState<"ask" | "automate">("ask");
   const [turns, setTurns] = useState<CopilotTurn[]>([]),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
@@ -1241,45 +1302,75 @@ function AppCopilot({
     "Show PIL-104 and why it is blocked",
   ] : ["Show all records", "Break down by status", "Break down by person", 'Find records containing "launch"'];
   return (
-    <aside className="jira-copilot" aria-label="Pilant Copilot">
+    <aside className="jira-copilot" aria-label="Pilant Agent">
       <header className="copilot-header">
         <span className="copilot-mark">
           <Sparkles size={18} />
         </span>
         <div>
-          <strong>Pilant Copilot</strong>
+          <strong>Pilant Agent</strong>
           <small>Your {names[source] || source}, on demand</small>
         </div>
+        {panelMode === "ask" && (
+          <button
+            className="icon-button"
+            aria-label="Clear copilot conversation"
+            disabled={busy || !turns.length}
+            onClick={async () => {
+              try {
+                await api(`/apps/${appId}/copilot`, { method: "DELETE" });
+                setTurns([]);
+                setError("");
+                onClear();
+              } catch (e) {
+                setError((e as Error).message);
+              }
+            }}
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
         <button
           className="icon-button"
-          aria-label="Clear copilot conversation"
-          disabled={busy || !turns.length}
-          onClick={async () => {
-            try {
-              await api(`/apps/${appId}/copilot`, { method: "DELETE" });
-              setTurns([]);
-              setError("");
-              onClear();
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }}
-        >
-          <Trash2 size={14} />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="Close copilot"
+          aria-label="Close agent panel"
           onClick={onClose}
         >
           <X size={17} />
         </button>
       </header>
+      <div className="agent-mode-tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={panelMode === "ask"}
+          className={panelMode === "ask" ? "active" : ""}
+          onClick={() => setPanelMode("ask")}
+        >
+          Ask
+        </button>
+        <button
+          role="tab"
+          aria-selected={panelMode === "automate"}
+          className={panelMode === "automate" ? "active" : ""}
+          disabled={source !== "jira"}
+          title={
+            source !== "jira"
+              ? "Automate mode currently supports Jira apps"
+              : ""
+          }
+          onClick={() => setPanelMode("automate")}
+        >
+          Automate
+        </button>
+      </div>
       <div className="copilot-source">
         <SourceIcon source={source} small />
         <span>{names[source] || source} data for this app</span>
         <small>{["jira", "helpdesk", "splunk", "crm"].includes(source) ? "Sample data" : "Connected data"}</small>
       </div>
+      {panelMode === "automate" ? (
+        <AgentAutomate appId={appId} onNotice={onNotice} />
+      ) : (
+      <>
       <div className="copilot-messages" aria-live="polite">
         {!turns.length && (
           <div className="copilot-welcome">
@@ -1387,7 +1478,427 @@ function AppCopilot({
       <footer className="copilot-footnote">
         Looks up data. Record changes use the record’s controls.
       </footer>
+      </>
+      )}
     </aside>
+  );
+}
+function AgentAutomate({
+  appId,
+  onNotice,
+}: {
+  appId: string;
+  onNotice: (m: string) => void;
+}) {
+  const [goal, setGoal] = useState("");
+  const [plan, setPlan] = useState<AgentPlan | null>(null);
+  const [busyPlan, setBusyPlan] = useState(false);
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [editingStep, setEditingStep] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [running, setRunning] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const pauseRef = useRef(false);
+
+  async function createPlan(e: React.FormEvent) {
+    e.preventDefault();
+    if (goal.trim().length < 10 || busyPlan) return;
+    setBusyPlan(true);
+    setError("");
+    try {
+      const d = await api(`/apps/${appId}/agent/plans`, {
+        method: "POST",
+        body: json({ goal }),
+      });
+      setPlan(d.plan);
+      setExpanded(true);
+      const sel: Record<string, boolean> = {};
+      (d.plan.steps as AgentStep[]).forEach((s) => {
+        if (s.status === "pending") sel[s.id] = true;
+      });
+      setSelected(sel);
+      onNotice(d.plan.note || "Plan created.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyPlan(false);
+    }
+  }
+
+  async function refreshPlan() {
+    if (!plan) return null;
+    const d = await api(`/apps/${appId}/agent/plans/${plan.id}`);
+    setPlan(d.plan);
+    return d.plan as AgentPlan;
+  }
+
+  function patchStep(step: AgentStep) {
+    setPlan((p) =>
+      p
+        ? { ...p, steps: p.steps.map((s) => (s.id === step.id ? step : s)) }
+        : p,
+    );
+  }
+
+  async function decide(stepId: string, decision: "approve" | "reject") {
+    if (!plan) return;
+    try {
+      const d = await api(
+        `/apps/${appId}/agent/plans/${plan.id}/steps/${stepId}/${decision === "approve" ? "approve" : "reject"}`,
+        { method: "POST" },
+      );
+      patchStep(d.step);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function retry(stepId: string) {
+    if (!plan) return;
+    try {
+      const d = await api(
+        `/apps/${appId}/agent/plans/${plan.id}/steps/${stepId}/retry`,
+        { method: "POST" },
+      );
+      patchStep(d.step);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function runOnce() {
+    if (!plan || running) return;
+    setRunning(true);
+    pauseRef.current = false;
+    setError("");
+    const toRun = plan.steps.filter(
+      (s) => s.status === "pending" && selected[s.id],
+    );
+    for (const step of toRun) {
+      if (pauseRef.current) break;
+      patchStep({ ...step, status: "running" });
+      try {
+        const d = await api(
+          `/apps/${appId}/agent/plans/${plan.id}/steps/${step.id}/approve`,
+          { method: "POST" },
+        );
+        patchStep(d.step);
+        if (d.step.status === "failed") break;
+      } catch (e) {
+        setError((e as Error).message);
+        break;
+      }
+    }
+    setRunning(false);
+    const fresh = await refreshPlan();
+    if (fresh) onNotice(`Workflow ${fresh.status.replace("_", " ")}.`);
+  }
+
+  async function pause() {
+    if (!plan) return;
+    pauseRef.current = true;
+    const d = await api(`/apps/${appId}/agent/plans/${plan.id}/pause`, {
+      method: "POST",
+    });
+    setPlan(d.plan);
+  }
+  async function resume() {
+    if (!plan) return;
+    const d = await api(`/apps/${appId}/agent/plans/${plan.id}/resume`, {
+      method: "POST",
+    });
+    setPlan(d.plan);
+  }
+  async function cancelWorkflow() {
+    if (!plan) return;
+    const d = await api(`/apps/${appId}/agent/plans/${plan.id}/cancel`, {
+      method: "POST",
+    });
+    setPlan(d.plan);
+  }
+  async function saveEdit(step: AgentStep) {
+    if (!plan) return;
+    try {
+      const d = await api(
+        `/apps/${appId}/agent/plans/${plan.id}/steps/${step.id}`,
+        { method: "PATCH", body: json({ input: editValue }) },
+      );
+      patchStep(d.step);
+      setEditingStep(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  async function loadAudit() {
+    try {
+      const d = await api(`/apps/${appId}/agent/audit`);
+      setAudit(d.entries);
+      setAuditOpen(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const pendingCount =
+    plan?.steps.filter((s) => s.status === "pending").length || 0;
+  const draftFields = (step: AgentStep) => {
+    const keys =
+      step.tool === "jira.updateAssignee" ? ["assignee"] : ["comment", "text", "body", "subject"];
+    return Object.entries(step.input).filter(
+      ([k, v]) => keys.includes(k) && v !== null && v !== "",
+    );
+  };
+
+  return (
+    <div className="agent-automate">
+      {!plan && (
+        <form className="agent-goal-form" onSubmit={createPlan}>
+          <label>
+            What should the agent do?
+            <textarea
+              rows={4}
+              maxLength={2000}
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              placeholder="Find urgent blocked issues, identify the assignees, draft follow-up messages and request updates."
+              disabled={busyPlan}
+            />
+          </label>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <button
+            className="primary wide"
+            disabled={busyPlan || goal.trim().length < 10}
+          >
+            {busyPlan ? "Planning…" : "Generate plan"}
+            <Sparkles size={16} />
+          </button>
+        </form>
+      )}
+      {plan && (
+        <div className="agent-plan">
+          <header className="agent-plan-header">
+            <div>
+              <strong>{plan.goal}</strong>
+              <span className={`agent-status agent-status-${plan.status}`}>
+                {plan.status.replace("_", " ")}
+              </span>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="Start a new plan"
+              onClick={() => {
+                setPlan(null);
+                setGoal("");
+                setError("");
+              }}
+            >
+              <Plus size={15} />
+            </button>
+          </header>
+          {plan.note && <p className="agent-note">{plan.note}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="agent-plan-controls">
+            <button className="secondary" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? "Hide plan" : "Review plan"}
+            </button>
+            {plan.status === "paused" ? (
+              <button className="secondary" onClick={resume}>
+                <Play size={13} /> Resume
+              </button>
+            ) : (
+              <button
+                className="secondary"
+                disabled={!pendingCount || running}
+                onClick={pause}
+              >
+                <Pause size={13} /> Pause
+              </button>
+            )}
+            <button
+              className="primary"
+              disabled={!pendingCount || running || plan.status === "paused"}
+              onClick={runOnce}
+            >
+              {running ? (
+                <RefreshCw size={13} className="spin" />
+              ) : (
+                <Play size={13} />
+              )}
+              Run once
+            </button>
+            <button
+              className="secondary"
+              disabled
+              title="Recurring runs aren't available yet"
+            >
+              <Clock size={13} /> Schedule
+            </button>
+            <button
+              className="secondary danger"
+              disabled={["cancelled", "completed"].includes(plan.status)}
+              onClick={cancelWorkflow}
+            >
+              <Ban size={13} /> Cancel workflow
+            </button>
+            <button className="secondary" onClick={loadAudit}>
+              Audit trail
+            </button>
+          </div>
+          {expanded && (
+            <ol className="agent-steps">
+              {plan.steps.map((step) => (
+                <li key={step.id} className={`agent-step agent-step-${step.status}`}>
+                  <div className="agent-step-head">
+                    <span className={`agent-risk agent-risk-${step.risk}`}>
+                      {step.risk}
+                    </span>
+                    <span>{step.label}</span>
+                    <span className={`badge ${step.status.replace("_", "-")}`}>
+                      {step.status.replace("_", " ")}
+                    </span>
+                  </div>
+                  {editingStep === step.id ? (
+                    <div className="agent-step-edit">
+                      {draftFields(step).map(([k, v]) => (
+                        <label key={k}>
+                          {k}
+                          <textarea
+                            rows={3}
+                            value={editValue[k] ?? String(v)}
+                            onChange={(e) =>
+                              setEditValue((old) => ({
+                                ...old,
+                                [k]: e.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      ))}
+                      <div className="agent-step-actions">
+                        <button
+                          className="secondary"
+                          onClick={() => setEditingStep(null)}
+                        >
+                          Cancel
+                        </button>
+                        <button className="primary" onClick={() => saveEdit(step)}>
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {draftFields(step).length > 0 && (
+                        <p className="agent-step-draft">
+                          {draftFields(step)
+                            .map(([, v]) => String(v))
+                            .join(" — ")}
+                        </p>
+                      )}
+                      {step.error && <p className="error">{step.error}</p>}
+                      {step.result &&
+                        (step.result as { mock?: boolean; note?: string })
+                          .mock && (
+                          <p className="agent-mock-note">
+                            {
+                              (step.result as { note?: string }).note
+                            }
+                          </p>
+                        )}
+                      <div className="agent-step-actions">
+                        {step.status === "pending" && (
+                          <>
+                            <label className="agent-step-select">
+                              <input
+                                type="checkbox"
+                                checked={!!selected[step.id]}
+                                onChange={(e) =>
+                                  setSelected((s) => ({
+                                    ...s,
+                                    [step.id]: e.target.checked,
+                                  }))
+                                }
+                              />
+                              Include in next run
+                            </label>
+                            <button
+                              className="secondary"
+                              onClick={() => {
+                                setEditingStep(step.id);
+                                const seed: Record<string, string> = {};
+                                draftFields(step).forEach(
+                                  ([k, v]) => (seed[k] = String(v)),
+                                );
+                                setEditValue(seed);
+                              }}
+                            >
+                              <Pencil size={12} /> Edit
+                            </button>
+                            <button
+                              className="secondary"
+                              onClick={() => decide(step.id, "reject")}
+                            >
+                              Reject
+                            </button>
+                            <button
+                              className="primary"
+                              onClick={() => decide(step.id, "approve")}
+                            >
+                              Approve and run
+                            </button>
+                          </>
+                        )}
+                        {step.status === "failed" && (
+                          <button className="secondary" onClick={() => retry(step.id)}>
+                            <RotateCcw size={12} /> Retry failed step
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+      {auditOpen && (
+        <Modal title="Audit trail" onClose={() => setAuditOpen(false)}>
+          <div className="agent-audit">
+            {!audit.length && <p className="muted">No activity recorded yet.</p>}
+            {audit.map((e) => (
+              <div key={e.id} className="agent-audit-row">
+                <div className="agent-audit-meta">
+                  <span>{new Date(e.at).toLocaleString()}</span>
+                  <span>{e.actor}</span>
+                  {e.connected_system && <span>{e.connected_system}</span>}
+                </div>
+                <div className="agent-audit-headline">
+                  <strong>{e.action.replace(/_/g, " ")}</strong>
+                  {e.tool && <code>{e.tool}</code>}
+                  {e.target && <span>{e.target}</span>}
+                  {e.decision && (
+                    <span className={`badge ${e.decision}`}>{e.decision}</span>
+                  )}
+                </div>
+                {e.result && <p>{e.result}</p>}
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
 function ResultBreakdown({ result }: { result: CopilotResult }) {

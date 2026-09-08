@@ -211,6 +211,68 @@ class Sources:
         padded = data['data'] + '=' * (-len(data['data']) % 4)
         return base64.urlsafe_b64decode(padded), meta['filename'], meta['mime_type']
 
+    def jira_add_comment(self, key, author, text):
+        """Add a follow-up comment to a Jira issue. Mock mode: like every
+        other sample-Jira write in this app, this never touches the shared
+        ISSUES/demo_issues fixtures -- it's stored as a per-owner overlay
+        (store.changes), so two users acting on the same fictional issue
+        never see each other's comments, matching the isolation already
+        established for status edits."""
+        issue = self.detail('jira', key)
+        if not issue:
+            raise ValueError('Issue not found.')
+        overlay = self.store.changes(self.owner, 'jira').get(key, {})
+        comments = list(overlay.get('agent_comments', []))
+        comments.append({'author': author, 'text': text, 'at': datetime.now(timezone.utc).isoformat()})
+        self.store.change(self.owner, 'jira', key, {'agent_comments': comments})
+        return {'issueKey': key, 'comment': text}
+
+    def jira_update_assignee(self, key, assignee):
+        """Reassign a Jira issue. Same per-owner overlay pattern as above."""
+        issue = self.detail('jira', key)
+        if not issue:
+            raise ValueError('Issue not found.')
+        self.store.change(self.owner, 'jira', key, {'assignee': assignee})
+        return {'issueKey': key, 'assignee': assignee}
+
+    def slack_send_message(self, text, context=''):
+        """Post to the owner's configured Slack channel. The destination is
+        always the server-known connection, never a value the caller (or a
+        model) supplies -- so a drafted message can never be redirected to
+        an arbitrary channel. If Slack isn't connected, this still
+        "executes" in a clearly labelled mock mode instead of failing, so
+        the workflow can be demonstrated end to end without live
+        credentials; connecting Slack later makes this the same call send
+        for real with no code change."""
+        c = self.store.connection(self.owner, 'slack')
+        if not c:
+            return {'ok': True, 'mock': True, 'text': text, 'context': context,
+                'note': 'Slack is not connected -- this is a simulated send. Connect Slack in Connections to actually deliver messages.'}
+        result = http('https://slack.com/api/chat.postMessage', c['token'], payload={'channel': c['channel'], 'text': text})
+        if not result.get('ok'):
+            raise SourceError('Slack could not send this message. Check the bot token, channel membership, and chat:write permission.')
+        return {'ok': True, 'mock': False, 'channel': c['channel'], 'ts': result.get('ts')}
+
+    def gmail_create_draft(self, assignee_name, subject, body):
+        """Create a Gmail draft addressed to a Jira assignee. The recipient
+        address is always derived server-side from the (already-verified)
+        assignee name -- never a free-text destination the model or caller
+        supplies -- since this fixture has no real per-person email
+        addresses, a deterministic @pilant-demo.test address stands in.
+        Falls back to a clearly labelled mock draft when Gmail isn't
+        connected, same reasoning as slack_send_message above."""
+        c = self.store.connection(self.owner, 'gmail')
+        to = re.sub(r'[^a-z.]', '', assignee_name.lower().replace(' ', '.')) + '@pilant-demo.test'
+        if not c:
+            return {'ok': True, 'mock': True, 'to': to, 'subject': subject, 'body': body,
+                'note': 'Gmail is not connected -- this is a simulated draft. Connect Gmail in Connections to create a real draft.'}
+        msg = MIMEText(body, 'plain', 'utf-8')
+        msg['To'] = to
+        msg['Subject'] = subject
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        result = self.gmail('/drafts', {'message': {'raw': raw}}, method='POST')
+        return {'ok': True, 'mock': False, 'to': to, 'draft_id': result.get('id')}
+
     def action(self, source, id, action, value):
         if source in ('jira', 'helpdesk', 'splunk', 'crm') and action == 'status':
             statuses = {'jira': JIRA_STATUSES, 'helpdesk': HELPDESK_STATUSES,
