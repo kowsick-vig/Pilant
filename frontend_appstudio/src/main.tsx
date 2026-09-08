@@ -1446,7 +1446,9 @@ function RecordView({
     ? ["To Do", "In Progress", "In Review", "Blocked", "Done"]
     : rows.every((r) => r.source === "helpdesk")
       ? ["open", "in_progress", "escalated", "resolved"]
-      : [];
+      : rows.every((r) => r.source === "splunk")
+        ? ["new", "investigating", "escalated", "resolved"]
+        : [];
   const columns = [...new Set([...base, ...states])];
   const details = (
     <Detail
@@ -1460,8 +1462,11 @@ function RecordView({
   if (layout === "board")
     return (
       <>
-        <div className="board">
-          {columns.map((s, i) => (
+        <div
+          className={`board-scroll ${columns.length > 3 ? "many-columns" : ""}`}
+        >
+          <div className="board">
+            {columns.map((s, i) => (
             <section
               className="board-column"
               key={s}
@@ -1528,6 +1533,7 @@ function RecordView({
               </div>
             </section>
           ))}
+          </div>
         </div>
         {selected && (
           <div className="detail-overlay">

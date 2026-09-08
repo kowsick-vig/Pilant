@@ -729,6 +729,25 @@ small {
   background: #eae6f7;
   color: #7666c2;
 }
+.board-scroll {
+  position: relative;
+}
+/* macOS hides overflow scrollbars until the user is actively scrolling, so
+   a board with more columns than fit the viewport (a 4+ status board, e.g.
+   Splunk's new/investigating/escalated/resolved) can look like the last
+   column's cards are simply cut off mid-word rather than "scroll for
+   more" — this fade is a persistent, always-visible hint that there's
+   more to the right, without waiting for a scroll gesture. */
+.board-scroll.many-columns::after {
+  content: "";
+  position: absolute;
+  top: 23px;
+  right: 0;
+  bottom: 30px;
+  width: 36px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, #f8f9fc 85%);
+}
 .board {
   display: flex;
   gap: 17px;
@@ -737,6 +756,19 @@ small {
   min-height: 470px;
   align-items: flex-start;
   scrollbar-width: thin;
+}
+.board::-webkit-scrollbar {
+  height: 8px;
+}
+.board::-webkit-scrollbar-thumb {
+  background: #d8dbe8;
+  border-radius: 8px;
+}
+.board::-webkit-scrollbar-thumb:hover {
+  background: #c3c7da;
+}
+.board::-webkit-scrollbar-track {
+  background: transparent;
 }
 .board-column {
   min-width: 206px;
@@ -835,7 +867,21 @@ small {
   line-height: 1.7;
   color: #657085;
   margin-bottom: 10px;
+  max-width: 100%;
+  /* Belt-and-suspenders text wrapping: `anywhere` (not `break-word`) is the
+     one that actually shrinks a flex/grid descendant's min-content size,
+     but `word-break` is kept alongside it as a second wrapping mechanism
+     some engines apply more eagerly — long unbroken alert/issue titles
+     (e.g. "High CPU Utilization Sustained Over Threshold") were observed
+     running past the card's right edge instead of wrapping. */
   overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  /* Keep long titles from overwhelming the board: clip to 3 lines. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .priority {
   display: inline-flex;
@@ -2219,13 +2265,8 @@ tr:hover td {
   }
 }
 
-/* Keep long source titles from overwhelming the board. */
-.issue-card h3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+/* (line-clamp + wrapping for .issue-card h3 now live in one place, near
+   its other rules, instead of being split across the file — see there.) */
 .board {
   max-height: calc(100vh - 390px);
   min-height: 380px;
