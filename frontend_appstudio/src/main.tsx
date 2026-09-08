@@ -34,6 +34,8 @@ import {
   Send,
   Bookmark,
   CircleHelp,
+  Paperclip,
+  FileText,
 } from "lucide-react";
 import "./style.css";
 import "./dedicated.css";
@@ -69,6 +71,12 @@ type Row = {
   starred?: boolean;
   detail?: Record<string, unknown>;
   labels?: string[];
+  attachments?: {
+    filename: string;
+    mime_type: string;
+    size: number;
+    attachment_id: string;
+  }[];
 };
 const names: Record<Source, string> = {
   gmail: "Gmail",
@@ -142,6 +150,20 @@ function dateLabel(value?: string) {
   return Number.isNaN(d.getTime())
     ? value
     : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function formatBytes(bytes: number) {
+  if (!bytes) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let n = bytes,
+    i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${i === 0 ? n : n.toFixed(1)} ${units[i]}`;
+}
+function gmailAttachmentUrl(messageId: string, attachmentId: string) {
+  return `/api/data/gmail/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`;
 }
 function statusClass(value?: string) {
   return (value || "").toLowerCase().replaceAll(" ", "-").replaceAll("_", "-");
@@ -1787,6 +1809,42 @@ function Detail({
           </p>
         )}
         {r.body && <div className="message-body">{r.body}</div>}
+        {r.source === "gmail" && !!r.attachments?.length && (
+          <div className="attachments">
+            {r.attachments.map((a) => {
+              const url = gmailAttachmentUrl(r.id, a.attachment_id);
+              const isImage = a.mime_type.startsWith("image/");
+              return isImage ? (
+                <a
+                  key={a.attachment_id}
+                  className="attachment-card attachment-image"
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img src={url} alt={a.filename} loading="lazy" />
+                  <span>{a.filename}</span>
+                </a>
+              ) : (
+                <a
+                  key={a.attachment_id}
+                  className="attachment-card attachment-file"
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {a.mime_type === "application/pdf" ? (
+                    <FileText size={16} />
+                  ) : (
+                    <Paperclip size={16} />
+                  )}
+                  <span>{a.filename}</span>
+                  {a.size ? <small>{formatBytes(a.size)}</small> : null}
+                </a>
+              );
+            })}
+          </div>
+        )}
         {r.detail && r.source !== "gmail" && (
           <dl className="record-fields">
             {Object.entries(r.detail)

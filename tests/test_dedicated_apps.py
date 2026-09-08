@@ -49,6 +49,21 @@ class DedicatedAppTests(unittest.TestCase):
         self.assertTrue(data['records'])
         self.assertEqual(data['source'],'jira')
         self.assertTrue(all(r['source']=='jira' and r['status']=='Blocked' for r in data['records']))
+    def test_page_sort_defaults_newest_and_oldest_reverses_it(self):
+        # A page always gets a real, enforced sort (see app_composer.SORTS /
+        # workspace_api.app_data) rather than only a free-text description
+        # claiming an order nothing applies — reported as "in jira seeing
+        # empty data's ... not in the order".
+        app=self.build()
+        page=app['pages'][0]
+        self.assertEqual(page['sort'],'newest')
+        newest=self.a.get('/api/apps/'+app['id']+'/data/'+page['id']).json['records']
+        self.assertGreater(len(newest),1)
+        spec=self.store.app('alice',app['id'])
+        spec['pages'][0]['sort']='oldest'
+        self.store.save_app('alice',{k:v for k,v in spec.items() if k!='id'},app['id'])
+        oldest=self.a.get('/api/apps/'+app['id']+'/data/'+page['id']).json['records']
+        self.assertEqual([r['id'] for r in oldest],list(reversed([r['id'] for r in newest])))
     def test_two_apps_for_same_software_have_independent_purpose_and_navigation(self):
         a=self.build(prompt='Show blocked issues first in a focus screen')
         b=self.build(prompt='Give me a table to browse all issues')

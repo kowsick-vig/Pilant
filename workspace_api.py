@@ -10,7 +10,7 @@ import time
 import urllib.parse
 from functools import wraps
 from pathlib import Path
-from flask import Flask, jsonify, request, session, send_from_directory, redirect
+from flask import Flask, jsonify, request, session, send_from_directory, redirect, Response
 from werkzeug.security import check_password_hash, generate_password_hash
 from workspace_store import Store
 from workspace_sources import SOURCES, Sources, SourceError, http
@@ -384,8 +384,23 @@ def create_app(data_dir=None, config=None):
         query = ' '.join(filter(None,[_literal_query(page['query']),request.args.get('q','')[:300]]))
         rows = adapters().fetch(spec['source'],query,page['folder'])
         if page['status']: rows = [r for r in rows if r.get('status')==page['status']]
+        # adapters().fetch() already returns rows newest-first by real date; a page
+        # built (or, for an app made before `sort` existed, defaulted via .get) with
+        # sort='oldest' just runs that same order backwards, rather than re-sorting.
+        if page.get('sort') == 'oldest': rows = list(reversed(rows))
         return jsonify(records=rows, source=spec['source'], sample=SOURCES[spec['source']]['kind']=='sample',
             scope='Up to 30 matching messages' if spec['source']=='gmail' else 'Up to 100 recent records' if spec['source'] in ['slack','github'] else 'Sample records')
+
+    @app.get('/api/data/gmail/<message_id>/attachments/<attachment_id>')
+    @authenticated
+    def gmail_attachment(message_id, attachment_id):
+        raw, filename, mime_type = adapters().gmail_attachment(message_id, attachment_id)
+        mime_type = mime_type or 'application/octet-stream'
+        disposition = 'inline' if mime_type.startswith('image/') or mime_type == 'application/pdf' else 'attachment'
+        resp = Response(raw, mimetype=mime_type)
+        safe_name = re.sub(r'[\r\n"]', '_', filename or 'attachment')
+        resp.headers['Content-Disposition'] = f'{disposition}; filename="{safe_name}"'
+        return resp
 
     @app.route('/api/apps/<app_id>/copilot', methods=['GET','POST','DELETE'])
     @authenticated

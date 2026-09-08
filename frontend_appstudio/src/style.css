@@ -1076,6 +1076,58 @@ small {
   line-height: 1.9;
   color: #737e90;
 }
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0 20px;
+}
+.attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e1e4ed;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px #28304304;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4b5468;
+  text-decoration: none;
+  max-width: 220px;
+}
+.attachment-card:hover {
+  background: #f7f6fd;
+  border-color: #d9d2f6;
+}
+.attachment-card span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-card small {
+  color: #a1a7b5;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.attachment-image {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 8px;
+  max-width: 180px;
+}
+.attachment-image img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #eff0f5;
+}
+.attachment-image span {
+  padding: 2px 2px 0;
+  max-width: 100%;
+}
 .record-fields {
   margin: 15px 0 25px;
   border-top: 1px solid #eff0f5;

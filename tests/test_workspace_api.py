@@ -43,7 +43,15 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(Store(self.tmp.name).views('alice')[0]['title'], 'Private board')
 
     def test_sample_edits_do_not_leak_between_users_or_modify_fixtures(self):
-        row = self.a.get('/api/data/jira').json['records'][0]
+        # Records now come back sorted newest-first by real date (see
+        # workspace_sources._by_date_desc), so records[0] isn't reliably a
+        # *real* Jira issue any more — the fictional PIL-1xx demo issues
+        # (jira_demo.py) can sort ahead of real ones. This test is
+        # specifically about live-Jira isolation, so pick a row that's
+        # actually backed by connectors_jira.get_issue(), not a demo one.
+        from connectors_jira import get_issue
+        records = self.a.get('/api/data/jira').json['records']
+        row = next(r for r in records if get_issue(r['id']))
         status = row['status']
         new = 'Done' if status != 'Done' else 'Blocked'
         r = self.mutate(self.a, '/api/data/jira/' + row['id'] + '/actions', {'action': 'status', 'value': new})
@@ -136,5 +144,66 @@ class WorkspaceTests(unittest.TestCase):
             raw = base64.urlsafe_b64decode(payload['raw']).decode()
             self.assertIn('sender@example.com', raw)
             self.assertIn('In-Reply-To: <message-1>', raw)
+
+    def test_gmail_dates_sort_by_real_chronology_not_header_text(self):
+        # Gmail's `date` is the raw RFC 2822 header ("Tue, 8 Sep 2026 ..."),
+        # not ISO-8601 like the other sources — unpadded day numbers and
+        # non-alphabetical month names mean a plain string sort scrambles
+        # it (e.g. "Mon, 18 Aug" < "Tue, 8 Sep" as text, backwards from
+        # reality). Reported as the app's list "not in the order" of the
+        # real inbox.
+        from workspace_sources import _date_ts, _by_date_desc
+        self.assertIsNone(_date_ts(None))
+        self.assertIsNone(_date_ts('not a date'))
+        rows = [
+            {'id': 'older', 'date': 'Mon, 18 Aug 2026 10:00:00 +0000'},
+            {'id': 'newest', 'date': 'Wed, 9 Sep 2026 09:00:00 +0000'},
+            {'id': 'middle', 'date': 'Tue, 8 Sep 2026 16:36:00 +0000'},
+            {'id': 'undated', 'date': None},
+        ]
+        self.assertEqual([r['id'] for r in _by_date_desc(rows)], ['newest', 'middle', 'older', 'undated'])
+
+    def test_gmail_detail_exposes_attachment_metadata_not_bytes(self):
+        self.store.save_connection('alice', 'gmail', {'refresh_token': 'alice-refresh'})
+        adapter = Sources(self.store, 'alice', {'client_id': 'id', 'client_secret': 'secret'})
+        message = {'id': 'm1', 'threadId': 't1', 'labelIds': [], 'payload': {
+            'headers': [{'name': 'From', 'value': 'a@example.com'}, {'name': 'Subject', 'value': 'Receipt'},
+                        {'name': 'Date', 'value': 'Tue, 8 Sep 2026 16:36:00 +0000'}],
+            'mimeType': 'multipart/mixed', 'parts': [
+                {'mimeType': 'text/plain', 'body': {'data': 'aGk'}},
+                {'filename': 'invoice.pdf', 'mimeType': 'application/pdf', 'body': {'attachmentId': 'att-1', 'size': 4096}},
+            ]}}
+        with patch.object(adapter, 'gmail', return_value=message):
+            row = adapter.detail('gmail', 'm1')
+        self.assertEqual(row['attachments'], [{'filename': 'invoice.pdf', 'mime_type': 'application/pdf', 'size': 4096, 'attachment_id': 'att-1'}])
+
+    def test_gmail_attachment_fetches_real_bytes_and_rejects_unknown_id(self):
+        self.store.save_connection('alice', 'gmail', {'refresh_token': 'alice-refresh'})
+        adapter = Sources(self.store, 'alice', {'client_id': 'id', 'client_secret': 'secret'})
+        message = {'id': 'm1', 'payload': {'parts': [
+            {'filename': 'photo.png', 'mimeType': 'image/png', 'body': {'attachmentId': 'att-1', 'size': 10}}]}}
+        import base64
+        raw_bytes = b'binary-image-data'
+        with patch.object(adapter, 'gmail', side_effect=[message, {'data': base64.urlsafe_b64encode(raw_bytes).decode().rstrip('=')}]) as call:
+            data, filename, mime_type = adapter.gmail_attachment('m1', 'att-1')
+        self.assertEqual((data, filename, mime_type), (raw_bytes, 'photo.png', 'image/png'))
+        self.assertIn('/attachments/att-1', call.call_args_list[1].args[0])
+        with patch.object(adapter, 'gmail', return_value=message):
+            with self.assertRaises(SourceError):
+                adapter.gmail_attachment('m1', 'no-such-id')
+
+    def test_gmail_attachment_route_requires_auth_and_serves_bytes(self):
+        self.assertEqual(self.app.test_client().get('/api/data/gmail/m1/attachments/att-1').status_code, 401)
+        self.store.save_connection('alice', 'gmail', {'refresh_token': 'alice-refresh'})
+        message = {'id': 'm1', 'payload': {'parts': [
+            {'filename': 'invoice.pdf', 'mimeType': 'application/pdf', 'body': {'attachmentId': 'att-1', 'size': 10}}]}}
+        import base64
+        with patch('workspace_sources.Sources.gmail', side_effect=[message, {'data': base64.urlsafe_b64encode(b'%PDF-1.4').decode()}]):
+            response = self.a.get('/api/data/gmail/m1/attachments/att-1')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, b'%PDF-1.4')
+        self.assertEqual(response.mimetype, 'application/pdf')
+        self.assertIn('inline', response.headers['Content-Disposition'])
+        self.assertIn('invoice.pdf', response.headers['Content-Disposition'])
 
 if __name__ == '__main__': unittest.main()

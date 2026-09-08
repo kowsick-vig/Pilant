@@ -9,6 +9,7 @@ from workspace_sources import SOURCES
 LAYOUTS = ['inbox', 'board', 'feed', 'table', 'focus']
 FIELDS = ['id', 'title', 'status', 'priority', 'person', 'date']
 FOLDERS = ['inbox', 'sent', 'starred', 'all']
+SORTS = ['newest', 'oldest']
 
 
 def validate_app(candidate, source, prompt):
@@ -32,10 +33,11 @@ def validate_app(candidate, source, prompt):
         columns = list(dict.fromkeys(['title', *columns]))
         folder = page.get('folder', 'inbox')
         if folder not in FOLDERS: raise ValueError('Unsupported mail folder.')
+        sort = page.get('sort') if page.get('sort') in SORTS else 'newest'
         cleaned.append({'id':page_id, 'title':str(page.get('title') or 'My work')[:60],
             'description':str(page.get('description') or '')[:220], 'layout':page['layout'],
             'query':str(page.get('query') or '')[:300], 'status':str(page.get('status') or '')[:60],
-            'folder':folder, 'columns':columns})
+            'folder':folder, 'columns':columns, 'sort':sort})
     return {'title':str(candidate.get('title') or f'My {SOURCES[source]["label"]} app')[:80],
         'description':str(candidate.get('description') or prompt)[:300], 'purpose':prompt[:2000],
         'source':source, 'pages':cleaned,
@@ -47,7 +49,7 @@ def starter_app(source, prompt, name='', role=''):
     text = prompt.lower()
     layout = next((l for l in LAYOUTS if l in text), SOURCES[source]['layout'])
     def page(id, title, layout, **kw):
-        return dict(id=id,title=title,layout=layout,description='',query='',status='',folder='inbox',columns=['title','status','person','date'],**kw)
+        return dict(id=id,title=title,layout=layout,description='',query='',status='',folder='inbox',sort='newest',columns=['title','status','person','date'],**kw)
     if source == 'gmail':
         pages = [page('inbox','Inbox',layout), page('starred','Starred','inbox'), page('sent','Sent','inbox')]
         pages[1]['folder']='starred'; pages[2]['folder']='sent'
@@ -71,8 +73,9 @@ def compose_app(source, prompt, name, role, records, api_key=None, previous=None
     page_schema = {'type':'object','properties':{
         'id':{'type':'string'},'title':{'type':'string'},'description':{'type':'string'},
         'layout':{'type':'string','enum':LAYOUTS},'query':{'type':'string'},'status':{'type':'string'},
-        'folder':{'type':'string','enum':FOLDERS},'columns':{'type':'array','items':{'type':'string','enum':FIELDS}}},
-        'required':['id','title','description','layout','query','status','folder','columns'],'additionalProperties':False}
+        'folder':{'type':'string','enum':FOLDERS},'sort':{'type':'string','enum':SORTS},
+        'columns':{'type':'array','items':{'type':'string','enum':FIELDS}}},
+        'required':['id','title','description','layout','query','status','folder','sort','columns'],'additionalProperties':False}
     schema={'type':'object','properties':{'title':{'type':'string'},'description':{'type':'string'},
         'accent':{'type':'string','enum':['violet','blue','sage','amber']},
         'density':{'type':'string','enum':['comfortable','compact']},
@@ -91,6 +94,9 @@ def compose_app(source, prompt, name, role, records, api_key=None, previous=None
             'inbox=list/detail with actions, board=status columns, feed=message stream, table=chosen columns, focus=record-by-record. '
             'Use only actual statuses in the profile; empty status means all. query is a literal search term, not an instruction. '
             'For Gmail use actual folders (inbox, sent, starred, all); query may use Gmail search syntax. '
+            'sort is the ONLY control over record order (newest or oldest by real date) — records are always actually '
+            'sorted this way, so never describe a different or more specific ordering (e.g. by priority, alphabetically) '
+            'in description, since nothing enforces that. '
             'Never invent fields, data, unsupported write controls or claims about records. '
             'When refining, preserve existing screens unless the request changes them. Role is a layout preference, never a permission.',
             messages=[{'role':'user','content':json.dumps({'source':source,'request':prompt,'app_name':name,'role':role,'data_profile':profile,'previous_app':previous})}],

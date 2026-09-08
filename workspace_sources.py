@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
-from email.utils import parseaddr
+from email.utils import parseaddr, parsedate_to_datetime
 
 SOURCES = {
     'gmail': {'label': 'Gmail', 'kind': 'live', 'layout': 'inbox', 'description': 'Read, search, and reply to your email.'},
@@ -49,6 +49,42 @@ def http(url, token=None, payload=None, form=None, method=None):
         raise SourceError(f'The source returned an error (HTTP {e.code}). Check the connection settings.') from None
     except (urllib.error.URLError, TimeoutError, ValueError):
         raise SourceError('Could not reach this source. Please try again.') from None
+
+
+def _date_ts(value):
+    """Turn a row's `date` into a comparable timestamp, or None if it can't be
+    parsed. Sources don't agree on date shape: Jira/GitHub/Slack use ISO-8601
+    (sorts fine as a string, but we want real chronological order, not text
+    order), while Gmail's `date` is the raw RFC 2822 `Date:` header (e.g.
+    "Tue, 8 Sep 2026 16:36:00 +0000") — NOT lexically sortable at all (day
+    numbers aren't zero-padded, month names aren't alphabetical-by-date), so
+    treating it as a plain string anywhere would silently scramble the order.
+    Tries the email-header format first (the case that actually breaks on a
+    naive sort), then falls back to ISO-8601."""
+    if not value:
+        return None
+    try:
+        dt = parsedate_to_datetime(value)
+        if dt is not None:
+            return dt.timestamp()
+    except (TypeError, ValueError):
+        pass
+    try:
+        from datetime import datetime as _datetime
+        iso = value[:-1] + '+00:00' if value.endswith('Z') else value
+        return _datetime.fromisoformat(iso).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _by_date_desc(rows):
+    """Sort newest-first by real date, undated rows pushed to the end
+    (never dropped) instead of sorting arbitrarily wherever a naive
+    string/None comparison would land them."""
+    def key(r):
+        ts = _date_ts(r.get('date'))
+        return (ts is None, -(ts or 0))
+    return sorted(rows, key=key)
 
 
 def record(source, id, title, **kwargs):
@@ -122,21 +158,38 @@ class Sources:
                 parsed = _message_dict_from_raw(item)
                 rows.append(record(source, parsed['id'], parsed['subject'], body=item.get('snippet', ''),
                     person=parsed['from'], date=parsed['date'], status='unread' if parsed['unread'] else 'read', starred=parsed['starred']))
-            return rows
+            return _by_date_desc(rows)
         else:
             raise SourceError('Unknown source.')
         if query:
             words = query.lower().split()
             rows = [r for r in rows if all(w in json.dumps(r).lower() for w in words)]
-        return rows
+        return _by_date_desc(rows)
 
     def detail(self, source, id):
         if source == 'gmail':
             from connectors_gmail import _message_dict_from_raw
             parsed = _message_dict_from_raw(self.gmail('/messages/' + urllib.parse.quote(id, safe='') + '?format=full'))
             return record(source, id, parsed['subject'], body=parsed['body'], person=parsed['from'],
-                date=parsed['date'], status='unread' if parsed['unread'] else 'read', starred=parsed['starred'], detail=parsed)
+                date=parsed['date'], status='unread' if parsed['unread'] else 'read', starred=parsed['starred'],
+                attachments=[{'filename': a['filename'], 'mime_type': a['mime_type'], 'size': a['size'],
+                    'attachment_id': a['attachment_id']} for a in parsed['attachments']], detail=parsed)
         return next((r for r in self.fetch(source) if r['id'] == id), None)
+
+    def gmail_attachment(self, message_id, attachment_id):
+        """Fetch one attachment's real bytes for the message it belongs to,
+        plus its filename/mime type (looked up fresh from the message's own
+        parts, since messages.attachments.get returns only {size, data} —
+        never trust a filename/type the client claims for what we serve)."""
+        from connectors_gmail import _walk_attachments
+        full = self.gmail('/messages/' + urllib.parse.quote(message_id, safe='') + '?format=full')
+        meta = next((a for a in _walk_attachments(full.get('payload') or {}) if a['attachment_id'] == attachment_id), None)
+        if not meta:
+            raise SourceError('Attachment not found.')
+        data = self.gmail('/messages/' + urllib.parse.quote(message_id, safe='') +
+            '/attachments/' + urllib.parse.quote(attachment_id, safe=''))
+        padded = data['data'] + '=' * (-len(data['data']) % 4)
+        return base64.urlsafe_b64decode(padded), meta['filename'], meta['mime_type']
 
     def action(self, source, id, action, value):
         if source in ('jira', 'helpdesk') and action == 'status':
