@@ -104,12 +104,12 @@ const names: Record<Source, string> = {
 };
 // Sources with a real agent_planner.py builder wired up server-side.
 // Kept in sync with workspace_api.py's create_agent_plan `builder` map.
-const AUTOMATE_SOURCES: Source[] = ["jira", "splunk"];
+const AUTOMATE_SOURCES: Source[] = ["jira", "splunk", "crm"];
 // A couple of ready-to-run goals per source, tuned to what the planner's
 // keyword extraction (agent_planner.py's _extract_search_filters /
-// _extract_splunk_search_filters) actually does with them -- not just
-// plausible-sounding text. The first of each list doubles as the
-// textarea's placeholder.
+// _extract_splunk_search_filters / _extract_crm_search_filters) actually
+// does with them -- not just plausible-sounding text. The first of each
+// list doubles as the textarea's placeholder.
 const automateGoalSuggestions: Partial<Record<Source, string[]>> = {
   jira: [
     "Find urgent blocked issues, identify the assignees, draft follow-up messages and request updates.",
@@ -118,6 +118,10 @@ const automateGoalSuggestions: Partial<Record<Source, string[]>> = {
   splunk: [
     "Find critical or escalated notable events with no assigned analyst, draft an assignment and request triage.",
     "Find all unassigned notable events and assign an analyst to each one for triage.",
+  ],
+  crm: [
+    "Find overdue high priority follow-up tasks and request status updates from the reps.",
+    "Find unassigned follow-up tasks and assign a rep to each one.",
   ],
 };
 const sourceIcons = {
@@ -1372,7 +1376,7 @@ function AppCopilot({
           disabled={!AUTOMATE_SOURCES.includes(source)}
           title={
             !AUTOMATE_SOURCES.includes(source)
-              ? "Automate mode currently supports Jira and Splunk apps"
+              ? "Automate mode currently supports Jira, Splunk, and CRM apps"
               : ""
           }
           onClick={() => setPanelMode("automate")}
@@ -1670,9 +1674,9 @@ function AgentAutomate({
   const pendingCount =
     plan?.steps.filter((s) => s.status === "pending").length || 0;
   const draftFields = (step: AgentStep) => {
-    const keys = ["jira.updateAssignee", "splunk.assignAnalyst"].includes(step.tool)
-      ? ["assignee", "analyst"]
-      : ["comment", "text", "body", "subject"];
+    const keys = ["jira.updateAssignee", "splunk.assignAnalyst", "crm.assignOwner"].includes(step.tool)
+      ? ["assignee", "analyst", "owner"]
+      : ["comment", "text", "body", "subject", "note"];
     return Object.entries(step.input).filter(
       ([k, v]) => keys.includes(k) && v !== null && v !== "",
     );

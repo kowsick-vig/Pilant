@@ -21,11 +21,13 @@ from tool_registry import get_tool
 # permissions today -- there is no team/manager hierarchy in this app to
 # restrict against yet. The check is still real and executed on every
 # call; it simply hasn't been asked to draw a distinction yet.
+_BASE_PERMISSIONS = {'jira.read', 'jira.write', 'slack.write', 'gmail.write',
+    'splunk.read', 'splunk.write', 'crm.read', 'crm.write'}
 PERMISSIONS_BY_ROLE = {
-    'Product & engineering': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
-    'Customer support': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
-    'Operations': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
-    'Leadership': {'jira.read', 'jira.write', 'slack.write', 'gmail.write', 'splunk.read', 'splunk.write'},
+    'Product & engineering': set(_BASE_PERMISSIONS),
+    'Customer support': set(_BASE_PERMISSIONS),
+    'Operations': set(_BASE_PERMISSIONS),
+    'Leadership': set(_BASE_PERMISSIONS),
 }
 
 

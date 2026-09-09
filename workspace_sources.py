@@ -245,6 +245,28 @@ class Sources:
         self.store.change(self.owner, 'splunk', id, {'owner': analyst})
         return {'eventId': id, 'analyst': analyst}
 
+    def crm_add_note(self, id, author, text):
+        """Add a follow-up note to a CRM task. Same per-owner overlay
+        pattern as jira_add_comment -- never mutates the shared fictional
+        task fixture, just this owner's view of it."""
+        task = self.detail('crm', id)
+        if not task:
+            raise ValueError('Task not found.')
+        overlay = self.store.changes(self.owner, 'crm').get(id, {})
+        notes = list(overlay.get('agent_notes', []))
+        notes.append({'author': author, 'text': text, 'at': datetime.now(timezone.utc).isoformat()})
+        self.store.change(self.owner, 'crm', id, {'agent_notes': notes})
+        return {'taskId': id, 'note': text}
+
+    def crm_assign_owner(self, id, owner):
+        """Assign a CRM task to a rep. Same per-owner overlay pattern as
+        jira_update_assignee / splunk_assign_analyst."""
+        task = self.detail('crm', id)
+        if not task:
+            raise ValueError('Task not found.')
+        self.store.change(self.owner, 'crm', id, {'owner': owner})
+        return {'taskId': id, 'owner': owner}
+
     def slack_send_message(self, text, context=''):
         """Post to the owner's configured Slack channel. The destination is
         always the server-known connection, never a value the caller (or a

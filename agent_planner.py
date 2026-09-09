@@ -1,9 +1,10 @@
 """Goal -> structured, editable action plan.
 
-Two use cases today, both built the same way -- `build_plan` for Jira
-follow-ups, `build_splunk_plan` for Splunk notable-event triage -- because
-the shape of "concretize targets deterministically, then draft text" is
-the same regardless of which connected system it targets.
+Three use cases today, all built the same way -- `build_plan` for Jira
+follow-ups, `build_splunk_plan` for Splunk notable-event triage,
+`build_crm_plan` for CRM task follow-up -- because the shape of
+"concretize targets deterministically, then draft text" is the same
+regardless of which connected system it targets.
 
 Two phases, deliberately:
 
@@ -287,5 +288,218 @@ def build_splunk_plan(store, sources, user, app_id, goal, api_key=None):
     note = f"{len(events)} event(s) found, {len(steps) - 1} action(s) drafted."
     audit_logger.record(store, owner, app_id, saved['id'], None, actor=owner, action='create_plan',
         tool=None, target=goal[:120], decision=None, connected_system='splunk', result=note)
+    saved['note'] = note
+    return saved
+
+
+def _extract_crm_search_filters(goal):
+    text = goal.lower()
+    status = ['overdue'] if 'overdue' in text else None
+    priority = ['high'] if any(w in text for w in
+        ['urgent', 'high priority', 'high-priority', 'critical', 'highest']) else None
+    unassigned = True if any(w in text for w in
+        ['unassigned', 'no owner', 'no rep', 'unowned', 'without an owner', 'without a rep', 'not assigned']) else None
+    return {'status': status, 'priority': priority, 'unassigned': unassigned}
+
+
+def _crm_owned_fallback_drafts(tasks):
+    drafts = []
+    for task in tasks:
+        rep = task['owner']
+        drafts.append({
+            'taskId': task['id'],
+            'note': f"Pilant Agent follow-up: {task['title']} for {task.get('company') or 'this account'} is "
+                    f"{task.get('status')} ({(task.get('priority') or '').lower()} priority). Asked {rep} for a status update.",
+            'message': f"Hi {rep}, following up on {task['id']} ({task['title']}) for "
+                       f"{task.get('company') or 'this account'} -- it's currently {task.get('status')} and "
+                       f"{(task.get('priority') or '').lower()} priority. Could you share a quick status update or next steps?",
+        })
+    return drafts
+
+
+def _crm_owned_ai_drafts(goal, tasks, api_key):
+    if not api_key or not tasks:
+        return _crm_owned_fallback_drafts(tasks)
+    import anthropic
+    valid_ids = [t['id'] for t in tasks]
+    schema = {'type': 'object', 'properties': {'drafts': {'type': 'array', 'maxItems': MAX_ISSUES, 'items': {
+        'type': 'object', 'properties': {
+            'taskId': {'type': 'string', 'enum': valid_ids},
+            'note': {'type': 'string'}, 'message': {'type': 'string'}},
+        'required': ['taskId', 'note', 'message'], 'additionalProperties': False}}},
+        'required': ['drafts'], 'additionalProperties': False}
+    try:
+        client = anthropic.Anthropic(api_key=api_key, timeout=30, max_retries=0)
+        response = client.messages.create(model='claude-haiku-4-5', max_tokens=1500,
+            system='Draft a short internal CRM note and a short chat/email nudge for each stalled follow-up task '
+                'given, addressed to the rep who already owns it. You are drafting TEXT ONLY: you do not choose '
+                'which tasks to act on or who owns them (already fixed by the server) -- these drafts are never '
+                'sent automatically, a human reviews and approves each one before anything is logged or sent. Be '
+                'specific: mention the task, the account/company, and ask for a concrete status update or ETA. '
+                'Keep each under 400 characters, professional, friendly. The task data given is real; never '
+                'invent a different task, owner, or fact, and never draft for a task id not in the list provided.',
+            messages=[{'role': 'user', 'content': json.dumps({'goal': goal, 'tasks': tasks})}],
+            tools=[{'name': 'draft_followups', 'description': 'Draft a note and a nudge message for each given task', 'input_schema': schema}],
+            tool_choice={'type': 'tool', 'name': 'draft_followups'})
+        candidate = next(b.input for b in response.content if b.type == 'tool_use')
+        by_id = {}
+        valid = set(valid_ids)
+        for d in candidate.get('drafts', []):
+            if not isinstance(d, dict):
+                continue
+            key = d.get('taskId')
+            note = str(d.get('note') or '').strip()[:2000]
+            message = str(d.get('message') or '').strip()[:2000]
+            if key in valid and note and message:
+                by_id[key] = {'taskId': key, 'note': note, 'message': message}
+        fallback_by_id = {d['taskId']: d for d in _crm_owned_fallback_drafts(tasks)}
+        return [by_id.get(t['id']) or fallback_by_id[t['id']] for t in tasks]
+    except Exception:
+        return _crm_owned_fallback_drafts(tasks)
+
+
+def _crm_unowned_fallback_drafts(tasks, assignments):
+    drafts = []
+    for task in tasks:
+        rep = assignments[task['id']]
+        drafts.append({
+            'taskId': task['id'],
+            'message': f"Hi {rep}, you've been assigned {task['id']} ({task['title']}) for "
+                       f"{task.get('company') or 'this account'}. Could you pick this up and share an ETA?",
+        })
+    return drafts
+
+
+def _crm_unowned_ai_drafts(goal, tasks, assignments, api_key):
+    if not api_key or not tasks:
+        return _crm_unowned_fallback_drafts(tasks, assignments)
+    import anthropic
+    valid_ids = [t['id'] for t in tasks]
+    schema = {'type': 'object', 'properties': {'drafts': {'type': 'array', 'maxItems': MAX_ISSUES, 'items': {
+        'type': 'object', 'properties': {
+            'taskId': {'type': 'string', 'enum': valid_ids},
+            'message': {'type': 'string'}},
+        'required': ['taskId', 'message'], 'additionalProperties': False}}},
+        'required': ['drafts'], 'additionalProperties': False}
+    try:
+        client = anthropic.Anthropic(api_key=api_key, timeout=30, max_retries=0)
+        payload = [{**t, 'assignedTo': assignments[t['id']]} for t in tasks]
+        response = client.messages.create(model='claude-haiku-4-5', max_tokens=1200,
+            system='Draft a short pickup-request message for each unassigned CRM follow-up task given, addressed '
+                'to the rep it has already been assigned to. You are drafting TEXT ONLY: you do not choose which '
+                'tasks to act on or who is assigned (already fixed by the server) -- these drafts are never sent '
+                'automatically, a human reviews and approves each one before anything is sent. Be specific: '
+                'mention the task and the account/company, and ask them to pick it up or share an ETA. Keep each '
+                'under 400 characters, professional, direct. The task data given is real; never invent a '
+                'different task, rep, or fact, and never draft for a task id not in the list provided.',
+            messages=[{'role': 'user', 'content': json.dumps({'goal': goal, 'tasks': payload})}],
+            tools=[{'name': 'draft_pickup_requests', 'description': 'Draft a pickup-request message for each given task', 'input_schema': schema}],
+            tool_choice={'type': 'tool', 'name': 'draft_pickup_requests'})
+        candidate = next(b.input for b in response.content if b.type == 'tool_use')
+        by_id = {}
+        valid = set(valid_ids)
+        for d in candidate.get('drafts', []):
+            if not isinstance(d, dict):
+                continue
+            key = d.get('taskId')
+            message = str(d.get('message') or '').strip()[:2000]
+            if key in valid and message:
+                by_id[key] = {'taskId': key, 'message': message}
+        fallback_by_id = {d['taskId']: d for d in _crm_unowned_fallback_drafts(tasks, assignments)}
+        return [by_id.get(t['id']) or fallback_by_id[t['id']] for t in tasks]
+    except Exception:
+        return _crm_unowned_fallback_drafts(tasks, assignments)
+
+
+def build_crm_plan(store, sources, user, app_id, goal, api_key=None):
+    """Goal -> plan for the CRM use case, unifying both patterns already
+    built: a task that already has an owner gets a logged note plus a
+    nudge to that owner (build_plan's jira.addComment pattern); a task
+    with no owner gets assigned via deterministic round-robin plus a
+    pickup request (build_splunk_plan's assign pattern). Which branch a
+    matched task takes depends only on whether it already has an owner --
+    never the model's choice, and never a reason to reassign work away
+    from whoever is already on it."""
+    owner = user['id']
+    goal = re.sub(r'\s+', ' ', goal).strip()[:2000]
+    if len(goal) < 10:
+        raise ValueError('Describe the automation goal in a little more detail.')
+    if not policy_engine.has_permission(user['role'], 'crm.searchTasks'):
+        raise ValueError('You do not have permission to search the CRM.')
+
+    search_tool = get_tool('crm.searchTasks')
+    clean = search_tool['validate'](_extract_crm_search_filters(goal))
+    search_result = search_tool['execute'](sources, clean)
+    tasks = search_result['tasks'][:MAX_ISSUES]
+
+    steps = [{
+        'tool': 'crm.searchTasks', 'label': 'Search for the matching CRM tasks', 'risk': 'read',
+        'approval_required': False, 'status': 'completed', 'input': clean, 'result': search_result, 'error': None,
+    }]
+
+    from connectors_crm import REPS
+    slack_connected = bool(store.connection(owner, 'slack'))
+    owned = [t for t in tasks if t.get('owner') and t['owner'] != 'Unassigned']
+    unowned = [t for t in tasks if not t.get('owner') or t['owner'] == 'Unassigned']
+    assignments = {t['id']: REPS[i % len(REPS)] for i, t in enumerate(unowned)}
+
+    owned_drafts = {d['taskId']: d for d in _crm_owned_ai_drafts(goal, owned, api_key)} if owned else {}
+    unowned_drafts = {d['taskId']: d for d in _crm_unowned_ai_drafts(goal, unowned, assignments, api_key)} if unowned else {}
+
+    for task in owned:
+        draft = owned_drafts.get(task['id'])
+        if not draft:
+            continue
+        rep = task['owner']
+        steps.append({
+            'tool': 'crm.addNote', 'label': f"Note on {task['id']} requesting a status update",
+            'risk': 'write', 'approval_required': True, 'status': 'pending',
+            'input': {'taskId': task['id'], 'note': draft['note']}, 'result': None, 'error': None,
+        })
+        if slack_connected:
+            steps.append({
+                'tool': 'slack.sendMessage', 'label': f"Message {rep} about {task['id']}",
+                'risk': 'message', 'approval_required': True, 'status': 'pending',
+                'input': {'text': draft['message'], 'context': task['id']}, 'result': None, 'error': None,
+            })
+        else:
+            steps.append({
+                'tool': 'gmail.createDraft', 'label': f"Draft an email to {rep} about {task['id']}",
+                'risk': 'message', 'approval_required': True, 'status': 'pending',
+                'input': {'assigneeName': rep, 'subject': f"Update needed on {task['id']}",
+                    'body': draft['message']}, 'result': None, 'error': None,
+            })
+
+    for task in unowned:
+        draft = unowned_drafts.get(task['id'])
+        if not draft:
+            continue
+        rep = assignments[task['id']]
+        steps.append({
+            'tool': 'crm.assignOwner', 'label': f"Assign {task['id']} to {rep}",
+            'risk': 'write', 'approval_required': True, 'status': 'pending',
+            'input': {'taskId': task['id'], 'owner': rep}, 'result': None, 'error': None,
+        })
+        if slack_connected:
+            steps.append({
+                'tool': 'slack.sendMessage', 'label': f"Message {rep} about {task['id']}",
+                'risk': 'message', 'approval_required': True, 'status': 'pending',
+                'input': {'text': draft['message'], 'context': task['id']}, 'result': None, 'error': None,
+            })
+        else:
+            steps.append({
+                'tool': 'gmail.createDraft', 'label': f"Draft an email to {rep} about {task['id']}",
+                'risk': 'message', 'approval_required': True, 'status': 'pending',
+                'input': {'assigneeName': rep, 'subject': f"Please pick up {task['id']}",
+                    'body': draft['message']}, 'result': None, 'error': None,
+            })
+
+    mode = 'ai' if api_key and (owned or unowned) else 'basic'
+    status = 'awaiting_approval' if any(s['status'] == 'pending' for s in steps) else 'completed'
+    saved = store.save_agent_plan(owner, app_id, goal, mode, status, steps)
+
+    note = f"{len(tasks)} task(s) found, {len(steps) - 1} action(s) drafted."
+    audit_logger.record(store, owner, app_id, saved['id'], None, actor=owner, action='create_plan',
+        tool=None, target=goal[:120], decision=None, connected_system='crm', result=note)
     saved['note'] = note
     return saved

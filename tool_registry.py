@@ -29,6 +29,8 @@ JIRA_STATUSES = ['To Do', 'In Progress', 'In Review', 'Blocked', 'Done']
 JIRA_PRIORITIES = ['Lowest', 'Low', 'Medium', 'High', 'Highest']
 SPLUNK_STATUSES = ['new', 'investigating', 'escalated', 'resolved']
 SPLUNK_SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational']
+CRM_STATUSES = ['open', 'in_progress', 'overdue', 'done']
+CRM_PRIORITIES = ['high', 'medium', 'low']
 
 RISK_READ, RISK_WRITE, RISK_MESSAGE = 'read', 'write', 'message'
 
@@ -235,6 +237,87 @@ def _execute_assign_analyst(sources, clean):
     return sources.splunk_assign_analyst(clean['eventId'], clean['analyst'])
 
 
+def _validate_search_tasks(raw):
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid input.')
+    unassigned = raw.get('unassigned')
+    if unassigned is not None and not isinstance(unassigned, bool):
+        raise ValueError('unassigned must be true or false.')
+    return {
+        'status': _as_list(raw.get('status'), CRM_STATUSES, 'status'),
+        'priority': _as_list(raw.get('priority'), CRM_PRIORITIES, 'priority'),
+        'unassigned': unassigned,
+    }
+
+
+def _execute_search_tasks(sources, clean):
+    rows = sources.fetch('crm')
+
+    def keep(row):
+        d = row.get('detail') or {}
+        status_ok = not clean['status'] or d.get('status') in clean['status']
+        priority_ok = not clean['priority'] or d.get('priority') in clean['priority']
+        # Same reasoning as Splunk's search: when both a status and a
+        # priority filter are given, treat them as alternative signals of
+        # urgency ("overdue OR high priority") rather than a compounding
+        # requirement -- these two dimensions are otherwise unrelated, and
+        # requiring both at once would silently return nothing for a
+        # perfectly reasonable natural-language goal.
+        urgent = (status_ok or priority_ok) if (clean['status'] and clean['priority']) else (status_ok and priority_ok)
+        if not urgent:
+            return False
+        if clean['unassigned'] and d.get('owner') != 'Unassigned':
+            return False
+        return True
+
+    matches = [r for r in rows if keep(r)]
+    tasks = [{
+        'id': r['id'], 'title': r['title'], 'status': (r.get('detail') or {}).get('status'),
+        'priority': (r.get('detail') or {}).get('priority'), 'owner': (r.get('detail') or {}).get('owner'),
+        'company': (r.get('detail') or {}).get('company'), 'contact': (r.get('detail') or {}).get('contact'),
+        'stage': (r.get('detail') or {}).get('stage'), 'due': (r.get('detail') or {}).get('due'),
+    } for r in matches]
+    return {'tasks': tasks, 'total': len(tasks)}
+
+
+def _validate_get_task(raw):
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid input.')
+    return {'taskId': _text(raw.get('taskId'), 'taskId', 40)}
+
+
+def _execute_get_task(sources, clean):
+    task = sources.detail('crm', clean['taskId'])
+    if not task:
+        raise ValueError(f"No CRM task found with id {clean['taskId']}.")
+    d = task.get('detail') or {}
+    return {'id': task['id'], 'title': task['title'], 'status': d.get('status'), 'priority': d.get('priority'),
+        'owner': d.get('owner'), 'company': d.get('company'), 'contact': d.get('contact'), 'stage': d.get('stage')}
+
+
+def _validate_add_note(raw):
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid input.')
+    return {'taskId': _text(raw.get('taskId'), 'taskId', 40),
+        'note': _text(raw.get('note'), 'note', 2000)}
+
+
+def _execute_add_note(sources, clean):
+    return sources.crm_add_note(clean['taskId'], sources.owner, clean['note'])
+
+
+def _validate_assign_owner(raw):
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid input.')
+    from connectors_crm import REPS  # the only names an assignment may target
+    return {'taskId': _text(raw.get('taskId'), 'taskId', 40),
+        'owner': _one_of(raw.get('owner'), REPS, 'owner')}
+
+
+def _execute_assign_owner(sources, clean):
+    return sources.crm_assign_owner(clean['taskId'], clean['owner'])
+
+
 TOOLS = {
     'jira.searchIssues': {
         'connected_system': 'jira', 'permission': 'jira.read', 'risk': RISK_READ, 'approval_required': False,
@@ -281,6 +364,27 @@ TOOLS = {
         'connected_system': 'splunk', 'permission': 'splunk.write', 'risk': RISK_WRITE, 'approval_required': True,
         'schema': {'eventId': 'e.g. "NE-30231"', 'analyst': 'one of the known analyst roster'},
         'validate': _validate_assign_analyst, 'execute': _execute_assign_analyst,
+    },
+    'crm.searchTasks': {
+        'connected_system': 'crm', 'permission': 'crm.read', 'risk': RISK_READ, 'approval_required': False,
+        'schema': {'status': f'one or more of {CRM_STATUSES}', 'priority': f'one or more of {CRM_PRIORITIES}',
+            'unassigned': 'true to only match tasks with no rep assigned'},
+        'validate': _validate_search_tasks, 'execute': _execute_search_tasks,
+    },
+    'crm.getTask': {
+        'connected_system': 'crm', 'permission': 'crm.read', 'risk': RISK_READ, 'approval_required': False,
+        'schema': {'taskId': 'e.g. "CRM-4001"'},
+        'validate': _validate_get_task, 'execute': _execute_get_task,
+    },
+    'crm.addNote': {
+        'connected_system': 'crm', 'permission': 'crm.write', 'risk': RISK_WRITE, 'approval_required': True,
+        'schema': {'taskId': 'e.g. "CRM-4001"', 'note': 'up to 2000 characters'},
+        'validate': _validate_add_note, 'execute': _execute_add_note,
+    },
+    'crm.assignOwner': {
+        'connected_system': 'crm', 'permission': 'crm.write', 'risk': RISK_WRITE, 'approval_required': True,
+        'schema': {'taskId': 'e.g. "CRM-4001"', 'owner': 'one of the known rep roster'},
+        'validate': _validate_assign_owner, 'execute': _execute_assign_owner,
     },
 }
 

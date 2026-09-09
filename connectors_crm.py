@@ -9,6 +9,11 @@ from datetime import datetime, timedelta, timezone
 STATUSES = ['open', 'in_progress', 'overdue', 'done']
 PRIORITIES = ['high', 'medium', 'low']
 STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost']
+# The known rep roster tasks rotate through below. Exported so
+# agent_planner.py can deterministically round-robin an assignment across
+# this same fixed roster rather than inventing or duplicating the list --
+# same reasoning as connectors_splunk.ANALYSTS.
+REPS = ['Jordan Lee', 'Ava Thompson', 'Marcus Webb', 'Sofia Rinaldi', 'Derek Chan']
 
 
 def get_tasks(now=None):
@@ -17,7 +22,7 @@ def get_tasks(now=None):
     generated app has something to actually organize. Returns a copy of
     each row — callers can't mutate the fixture."""
     now = now or datetime.now(timezone.utc)
-    reps = ['Jordan Lee', 'Ava Thompson', 'Marcus Webb', 'Sofia Rinaldi', 'Derek Chan', None]
+    reps = REPS + [None]
     contacts = ['Owen Blake', 'Sarah Kim', 'James Okafor', 'Elena Vasquez', 'Priya Desai',
         'Noah Bennett', 'Rachel Ortiz', 'Tariq Malik', 'Chloe Bergstrom', 'Diego Santos',
         'Amara Obi', 'Lucas Ferreira', 'Hana Suzuki', 'Freya Nilsen', 'Victor Osei',

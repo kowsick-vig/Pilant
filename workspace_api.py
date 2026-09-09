@@ -468,9 +468,10 @@ def create_app(data_dir=None, config=None):
         import agent_planner
         spec = owned_app(app_id)
         if not spec: return jsonify(error='App not found.'), 404
-        builder = {'jira': agent_planner.build_plan, 'splunk': agent_planner.build_splunk_plan}.get(spec['source'])
+        builder = {'jira': agent_planner.build_plan, 'splunk': agent_planner.build_splunk_plan,
+            'crm': agent_planner.build_crm_plan}.get(spec['source'])
         if not builder:
-            raise ValueError('Automate mode currently supports Jira and Splunk apps. Ask mode still works for every source.')
+            raise ValueError('Automate mode currently supports Jira, Splunk, and CRM apps. Ask mode still works for every source.')
         if agent_rate_limited(session['user']):
             return jsonify(error='Too many automation requests. Please wait a moment and try again.'), 429
         body = request.get_json(silent=True) or {}
