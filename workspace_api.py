@@ -39,6 +39,19 @@ def _literal_query(text):
     reaches fetch() leaves the real status filter (applied two lines below,
     in app_data()) to do its job, without touching the AI prompt/schema or
     the generic substring search genuinely free-text queries still rely on.
+
+    Gmail is the deliberate exception (see app_data()): Sources.fetch()
+    forwards a Gmail page's query straight to the real Gmail search API
+    (workspace_sources.py's gmail branch returns before the generic
+    substring-match block below runs at all), and Gmail's API genuinely
+    understands "is:unread"/"from:(a OR b OR c)" syntax — which is exactly
+    what app_composer.py's system prompt tells the model it may use for
+    Gmail screens ("query may use Gmail search syntax"). Running THIS
+    stripper on a Gmail query first was silently gutting that syntax
+    before it ever reached Gmail (reproduced: a screen meant to filter
+    "is:unread from:(anthropic.com OR puregym.com OR uber.com)" had both
+    field:value tokens stripped, leaving stray "OR ..." fragments that
+    matched almost every unread message instead of the intended senders).
     """
     return _STRUCTURED_QUERY_TOKEN.sub('', text or '').strip()
 
@@ -394,7 +407,11 @@ def create_app(data_dir=None, config=None):
         if not spec: return jsonify(error='App not found.'),404
         page = next((p for p in spec['pages'] if p['id']==page_id),None)
         if not page: return jsonify(error='Screen not found.'),404
-        query = ' '.join(filter(None,[_literal_query(page['query']),request.args.get('q','')[:300]]))
+        # Gmail's own fetch() forwards this straight to the real Gmail search
+        # API, which genuinely understands "is:unread"/"from:(...)" syntax —
+        # see _literal_query()'s docstring for why it must NOT run on Gmail.
+        raw_query = page['query'] if spec['source'] == 'gmail' else _literal_query(page['query'])
+        query = ' '.join(filter(None,[raw_query,request.args.get('q','')[:300]]))
         rows = adapters().fetch(spec['source'],query,page['folder'])
         if page['status']: rows = [r for r in rows if r.get('status')==page['status']]
         # adapters().fetch() already returns rows newest-first by real date; a page
