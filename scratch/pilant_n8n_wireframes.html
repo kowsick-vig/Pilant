@@ -1,0 +1,376 @@
+<title>Pilant & n8n Wireframes</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg:#f6f5f2; --panel:#ffffff; --panel-2:#faf9f6;
+    --ink:#1c1b18; --muted:#6b6a63; --faint:#8f8d84;
+    --line:#cfccc1; --line-strong:#1c1b18;
+    --accent-pilant:#2e5aac; --accent-pilant-soft:#e4ebf8;
+    --accent-n8n:#c8365a; --accent-n8n-soft:#fbe7ec;
+    --good:#3f7d53; --good-soft:#e6f1e9;
+    --warn:#a5711f; --warn-soft:#f6ecd9;
+    --shadow: 0 1px 0 rgba(28,27,24,0.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#161512; --panel:#1e1d19; --panel-2:#222019;
+      --ink:#eeece4; --muted:#a6a398; --faint:#7d7a70;
+      --line:#3c392f; --line-strong:#eeece4;
+      --accent-pilant:#7ea3ea; --accent-pilant-soft:#20304d;
+      --accent-n8n:#ef7f97; --accent-n8n-soft:#402029;
+      --good:#7ecb96; --good-soft:#1f2f23;
+      --warn:#e3b463; --warn-soft:#3a2f16;
+      --shadow: 0 1px 0 rgba(0,0,0,0.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#161512; --panel:#1e1d19; --panel-2:#222019;
+    --ink:#eeece4; --muted:#a6a398; --faint:#7d7a70;
+    --line:#3c392f; --line-strong:#eeece4;
+    --accent-pilant:#7ea3ea; --accent-pilant-soft:#20304d;
+    --accent-n8n:#ef7f97; --accent-n8n-soft:#402029;
+    --good:#7ecb96; --good-soft:#1f2f23;
+    --warn:#e3b463; --warn-soft:#3a2f16;
+    --shadow: 0 1px 0 rgba(0,0,0,0.3);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    margin:0; padding-inline:20px; padding-block:36px 60px;
+  }
+  .mono{ font-family:'IBM Plex Mono', ui-monospace, monospace; }
+
+  .wrap{ max-width:1180px; margin:0 auto; }
+
+  header.top{ margin-bottom:34px; }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--muted); margin:0 0 10px;
+  }
+  h1{
+    font-size:clamp(26px,4vw,36px); line-height:1.15; margin:0 0 10px;
+    text-wrap:balance; font-weight:700; letter-spacing:-.01em;
+  }
+  .sub{ color:var(--muted); font-size:15px; max-width:62ch; line-height:1.55; margin:0; }
+
+  section{ margin-top:48px; }
+  .section-head{
+    display:flex; align-items:baseline; gap:12px; margin-bottom:18px;
+    border-bottom:1px solid var(--line); padding-bottom:12px;
+  }
+  .tag{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;
+    padding:3px 8px; border-radius:3px; letter-spacing:.03em;
+  }
+  .tag.pilant{ color:var(--accent-pilant); background:var(--accent-pilant-soft); }
+  .tag.n8n{ color:var(--accent-n8n); background:var(--accent-n8n-soft); }
+  .section-head h2{ font-size:19px; margin:0; font-weight:700; }
+  .section-head p{ margin:2px 0 0; color:var(--muted); font-size:13.5px; }
+
+  /* ---------- Pilant wireframe screens ---------- */
+  .screens{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:18px;
+  }
+  @media (max-width:920px){ .screens{ grid-template-columns:1fr; } }
+
+  .screen{
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+    box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column;
+  }
+  .screen-head{
+    display:flex; align-items:center; gap:8px; padding:10px 12px;
+    border-bottom:1px solid var(--line); background:var(--panel-2);
+  }
+  .step-no{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;
+    width:18px; height:18px; border-radius:50%; border:1px solid var(--line-strong);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .screen-head span{ font-size:12.5px; font-weight:600; }
+  .screen-body{ padding:14px; display:flex; flex-direction:column; gap:10px; flex:1; }
+
+  .wf-box{
+    border:1px dashed var(--line); border-radius:4px; padding:8px 10px;
+    font-size:12px; color:var(--muted);
+  }
+  .tabs{ display:flex; gap:6px; }
+  .tab{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 9px;
+    border:1px solid var(--line); border-radius:4px; color:var(--faint);
+  }
+  .tab.active{ color:var(--accent-pilant); border-color:var(--accent-pilant); font-weight:600; }
+
+  .goal-box{
+    border:1px solid var(--line); border-radius:4px; padding:10px; font-size:12px; color:var(--ink);
+    min-height:44px;
+  }
+  .suggest-label{ font-size:11px; color:var(--faint); }
+  .suggest-btn{
+    border:1px solid var(--line); border-radius:4px; padding:6px 9px; font-size:11.5px;
+    display:flex; justify-content:space-between; gap:6px; color:var(--ink);
+  }
+  .suggest-btn::after{ content:'→'; color:var(--faint); }
+
+  .plan-step{
+    border:1px solid var(--line); border-radius:4px; padding:8px 9px;
+    display:flex; flex-direction:column; gap:6px; font-size:11.5px;
+  }
+  .plan-step.gate{ border-color:var(--accent-pilant); background:var(--accent-pilant-soft); }
+  .step-row1{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .tool-name{ font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; }
+  .chip{
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px; padding:2px 6px; border-radius:20px;
+    text-transform:uppercase; letter-spacing:.03em; white-space:nowrap;
+  }
+  .chip.completed{ color:var(--good); background:var(--good-soft); }
+  .chip.pending{ color:var(--warn); background:var(--warn-soft); }
+  .step-detail{ color:var(--muted); }
+  .step-actions{ display:flex; gap:6px; margin-top:2px; }
+  .btn-outline{
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; padding:5px 8px;
+    border-radius:4px; border:1px solid var(--line-strong); text-align:center;
+  }
+  .btn-outline.primary{ border-color:var(--accent-pilant); color:var(--accent-pilant); font-weight:600; }
+
+  .audit-row{
+    display:grid; grid-template-columns:64px 1fr auto; gap:8px; align-items:center;
+    font-size:11px; padding:6px 0; border-bottom:1px solid var(--line);
+  }
+  .audit-row:last-child{ border-bottom:none; }
+  .audit-actor{ font-family:'IBM Plex Mono',monospace; color:var(--faint); }
+  .audit-what{ color:var(--ink); }
+  .audit-what b{ font-weight:600; }
+
+  .callout{
+    margin-top:6px; padding-top:8px; border-top:1px dashed var(--line);
+    font-size:11px; color:var(--accent-pilant); display:flex; gap:6px;
+  }
+  .callout::before{ content:'▸'; }
+  .callout.n8nc{ color:var(--accent-n8n); }
+
+  /* ---------- n8n workflow wireframe ---------- */
+  .canvas-frame{
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+    box-shadow:var(--shadow); padding:6px; overflow-x:auto;
+  }
+  svg.flow text{ font-family:'IBM Plex Mono', monospace; }
+
+  .n8n-note{
+    display:flex; gap:8px; margin-top:14px; padding:12px 14px;
+    border:1px solid var(--accent-n8n); background:var(--accent-n8n-soft);
+    border-radius:6px; font-size:12.5px; color:var(--ink); line-height:1.5;
+  }
+  .n8n-note b{ color:var(--accent-n8n); }
+
+  /* ---------- comparison strip ---------- */
+  .compare{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:6px;
+    overflow:hidden; margin-top:14px;
+  }
+  @media (max-width:760px){ .compare{ grid-template-columns:1fr; } }
+  .compare > div{ background:var(--panel); padding:16px 18px; }
+  .compare h3{ font-size:13px; margin:0 0 8px; font-family:'IBM Plex Mono',monospace; }
+  .compare .row{ display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:5px 0; border-top:1px solid var(--line); }
+  .compare .row:first-of-type{ border-top:none; }
+  .yes{ color:var(--good); font-weight:600; }
+  .no{ color:var(--faint); }
+
+  footer{ margin-top:44px; padding-top:16px; border-top:1px solid var(--line); color:var(--faint); font-size:11.5px; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Working wireframes — build reference, not final UI</p>
+    <h1>Pilant Automate vs. the same job in n8n</h1>
+    <p class="sub">Left: the actual screen flow for Pilant's Automate mode (goal → plan → approval gate → audit trail). Right: what the equivalent job — find unassigned critical Splunk events, assign an analyst, notify them — looks like wired up as an n8n canvas instead.</p>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <span class="tag pilant">Pilant</span>
+      <div>
+        <h2>Automate mode — screen flow</h2>
+        <p>Deterministic search → AI-drafted action → human approval → executed → logged</p>
+      </div>
+    </div>
+
+    <div class="screens">
+      <!-- Screen 1: goal + suggestions -->
+      <div class="screen">
+        <div class="screen-head"><span class="step-no">1</span><span>Agent panel — Automate</span></div>
+        <div class="screen-body">
+          <div class="tabs">
+            <div class="tab">Ask</div>
+            <div class="tab active">Automate</div>
+          </div>
+          <div class="goal-box">Find critical or escalated notable events with no assigned analyst, draft an assignment and request triage.</div>
+          <div class="suggest-label">Or try one of these:</div>
+          <div class="suggest-btn">Find all unassigned notable events and assign an analyst to each</div>
+          <div class="wf-box">[ Generate plan ]</div>
+        </div>
+      </div>
+
+      <!-- Screen 2: plan with approval gate -->
+      <div class="screen">
+        <div class="screen-head"><span class="step-no">2</span><span>Plan — awaiting approval</span></div>
+        <div class="screen-body">
+          <div class="plan-step">
+            <div class="step-row1"><span class="tool-name">splunk.searchEvents</span><span class="chip completed">completed</span></div>
+            <div class="step-detail">read · 1 event found (NE-30235)</div>
+          </div>
+          <div class="plan-step gate">
+            <div class="step-row1"><span class="tool-name">splunk.assignAnalyst</span><span class="chip pending">pending</span></div>
+            <div class="step-detail">write · NE‑30235 → Nina Alvarez</div>
+            <div class="step-actions">
+              <div class="btn-outline primary">Approve and run</div>
+              <div class="btn-outline">Reject</div>
+            </div>
+          </div>
+          <div class="callout">Nothing writes to Splunk until this is clicked</div>
+        </div>
+      </div>
+
+      <!-- Screen 3: audit trail -->
+      <div class="screen">
+        <div class="screen-head"><span class="step-no">3</span><span>Audit trail</span></div>
+        <div class="screen-body">
+          <div class="audit-row"><span class="audit-actor">alice</span><span class="audit-what">create_<b>plan</b> · splunk</span><span class="chip completed">—</span></div>
+          <div class="audit-row"><span class="audit-actor">alice</span><span class="audit-what">execute_step · <b>assignAnalyst</b></span><span class="chip completed">approved</span></div>
+          <div class="audit-row"><span class="audit-actor">alice</span><span class="audit-what">execute_step · <b>sendMessage</b></span><span class="chip completed">approved</span></div>
+          <div class="callout">Append-only — never edited, one row per decision</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="tag n8n">n8n</span>
+      <div>
+        <h2>Same job, built as an n8n canvas</h2>
+        <p>Cron-triggered node graph — no plan, no approval step, no per-run audit unless you add one</p>
+      </div>
+    </div>
+
+    <div class="canvas-frame">
+      <svg class="flow" viewBox="0 0 1180 300" role="img" aria-label="n8n workflow: a cron trigger runs a Splunk search, an IF node checks for unassigned critical events, then a function picks an analyst, assigns them via HTTP request, and posts a Slack notification; the false branch of the IF node does nothing." style="width:100%;height:auto;color:var(--ink)">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <!-- connectors -->
+        <g stroke="currentColor" stroke-width="1.4" fill="none" opacity="0.75">
+          <path d="M150,60 H198" marker-end="url(#arrow)"/>
+          <path d="M370,60 H418" marker-end="url(#arrow)"/>
+          <path d="M560,52 C600,52 600,52 618,52" marker-end="url(#arrow)"/>
+          <path d="M560,68 C600,90 600,190 618,190" marker-end="url(#arrow)"/>
+          <path d="M790,52 H838" marker-end="url(#arrow)"/>
+          <path d="M1010,52 H1048" marker-end="url(#arrow)"/>
+        </g>
+        <text x="585" y="42" font-size="10.5" fill="var(--good)">true</text>
+        <text x="585" y="150" font-size="10.5" fill="var(--faint)">false</text>
+
+        <!-- Node 1: Cron Trigger -->
+        <g transform="translate(10,30)">
+          <rect width="140" height="60" rx="10" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="24" cy="30" r="11" fill="none" stroke="var(--accent-n8n)" stroke-width="1.6"/>
+          <path d="M24,23 V30 L29,34" stroke="var(--accent-n8n)" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+          <text x="44" y="27" font-size="11" font-weight="600" fill="currentColor">Cron</text>
+          <text x="44" y="41" font-size="9.5" fill="var(--muted)">every 15 min</text>
+        </g>
+
+        <!-- Node 2: HTTP Request search -->
+        <g transform="translate(200,30)">
+          <rect width="170" height="60" rx="10" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="24" cy="30" r="11" fill="none" stroke="var(--accent-n8n)" stroke-width="1.6"/>
+          <text x="24" y="34" font-size="10" text-anchor="middle" fill="var(--accent-n8n)">GET</text>
+          <text x="44" y="24" font-size="11" font-weight="600" fill="currentColor">HTTP Request</text>
+          <text x="44" y="38" font-size="9.5" fill="var(--muted)">search Splunk events</text>
+          <text x="44" y="50" font-size="9.5" fill="var(--muted)">severity=critical, owner=null</text>
+        </g>
+
+        <!-- Node 3: IF -->
+        <g transform="translate(420,30)">
+          <rect width="140" height="60" rx="10" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="24" cy="30" r="11" fill="none" stroke="var(--accent-n8n)" stroke-width="1.6"/>
+          <text x="24" y="34" font-size="11" text-anchor="middle" fill="var(--accent-n8n)">?</text>
+          <text x="44" y="27" font-size="11" font-weight="600" fill="currentColor">IF</text>
+          <text x="44" y="41" font-size="9.5" fill="var(--muted)">items.length &gt; 0</text>
+        </g>
+
+        <!-- Node 4: Function pick analyst -->
+        <g transform="translate(620,20)">
+          <rect width="170" height="60" rx="10" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="24" cy="30" r="11" fill="none" stroke="var(--accent-n8n)" stroke-width="1.6"/>
+          <text x="24" y="34" font-size="12" text-anchor="middle" fill="var(--accent-n8n)">ƒ</text>
+          <text x="44" y="24" font-size="11" font-weight="600" fill="currentColor">Function</text>
+          <text x="44" y="38" font-size="9.5" fill="var(--muted)">pick analyst</text>
+          <text x="44" y="50" font-size="9.5" fill="var(--muted)">(round robin, hand-coded)</text>
+        </g>
+
+        <!-- Node 5: No Op (false branch) -->
+        <g transform="translate(620,160)">
+          <rect width="170" height="60" rx="10" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.3" stroke-dasharray="4 3" opacity="0.75"/>
+          <circle cx="24" cy="30" r="11" fill="none" stroke="var(--faint)" stroke-width="1.6"/>
+          <text x="44" y="24" font-size="11" font-weight="600" fill="var(--muted)">No Op</text>
+          <text x="44" y="38" font-size="9.5" fill="var(--faint)">nothing to assign —</text>
+          <text x="44" y="50" font-size="9.5" fill="var(--faint)">wait for next run</text>
+        </g>
+
+        <!-- Node 6: HTTP Request assign -->
+        <g transform="translate(840,20)">
+          <rect width="170" height="60" rx="10" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="24" cy="30" r="11" fill="none" stroke="var(--accent-n8n)" stroke-width="1.6"/>
+          <text x="24" y="34" font-size="9.5" text-anchor="middle" fill="var(--accent-n8n)">POST</text>
+          <text x="44" y="24" font-size="11" font-weight="600" fill="currentColor">HTTP Request</text>
+          <text x="44" y="38" font-size="9.5" fill="var(--muted)">assign analyst in Splunk</text>
+          <text x="44" y="50" font-size="9.5" fill="var(--warn)">runs immediately, no gate</text>
+        </g>
+
+        <!-- Node 7: Slack -->
+        <g transform="translate(1050,20)">
+          <rect width="130" height="60" rx="10" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="24" cy="30" r="11" fill="none" stroke="var(--accent-n8n)" stroke-width="1.6"/>
+          <path d="M18,26 h12 M18,30 h9 M18,34 h12" stroke="var(--accent-n8n)" stroke-width="1.4" stroke-linecap="round"/>
+          <text x="44" y="27" font-size="11" font-weight="600" fill="currentColor">Slack</text>
+          <text x="44" y="41" font-size="9.5" fill="var(--muted)">notify #triage</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="n8n-note">
+      <span><b>Note on this wireframe:</b> in a bare n8n build the HTTP Request node writes to Splunk the moment the IF condition passes — there's no equivalent of Pilant's "Approve and run" step in the canvas itself. You'd have to add that by hand: a Wait/Webhook node pausing for a Slack approval reaction, plus a Postgres or Airtable node logging each decision — which is what Pilant's approval gate and audit trail give you natively.</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div><h2>What the wireframes leave out of n8n by default</h2></div>
+    </div>
+    <div class="compare">
+      <div>
+        <h3>Approval gate</h3>
+        <div class="row"><span>Pilant</span><span class="yes">built in</span></div>
+        <div class="row"><span>n8n</span><span class="no">manual add-on</span></div>
+      </div>
+      <div>
+        <h3>Immutable audit log</h3>
+        <div class="row"><span>Pilant</span><span class="yes">built in</span></div>
+        <div class="row"><span>n8n</span><span class="no">manual add-on</span></div>
+      </div>
+      <div>
+        <h3>Deterministic targeting<br/>before AI drafts text</h3>
+        <div class="row"><span>Pilant</span><span class="yes">built in</span></div>
+        <div class="row"><span>n8n</span><span class="no">manual add-on</span></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Wireframe reference for Pilant Agent's Automate mode (Splunk triage use case) and the equivalent n8n canvas. Grayscale boxes and node shapes are structural placeholders, not final visual styling.</footer>
+</div>

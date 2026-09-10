@@ -1,0 +1,358 @@
+<title>Pilant Automate Workflow</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  :root{
+    --page:#f4f5f7; --card:#ffffff; --ink:#15181f; --muted:#5c6270; --faint:#8a8f9c;
+    --line:#e4e6ec;
+
+    --p1:#eaf1fd; --p1-line:#c7dbf7; --p1-ink:#1d4ea6;
+    --p2:#f0ecfb; --p2-line:#d9cdf5; --p2-ink:#5b34b8;
+    --p3:#e9f7ee; --p3-line:#c7ecd3; --p3-ink:#1f7a43;
+    --p4:#fdf3d9; --p4-line:#f3ddaa; --p4-ink:#93690b;
+    --p5:#e4f6f4; --p5-line:#bfe9e4; --p5-ink:#0d7d72;
+    --p6:#fbe9ec; --p6-line:#f3c6cd; --p6-ink:#a4293d;
+
+    --node-bg:#ffffff; --node-line:#dfe2e9;
+    --shadow: 0 1px 2px rgba(21,24,31,0.05), 0 1px 0 rgba(21,24,31,0.03);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--page); color:var(--ink);
+    font-family:'Inter', ui-sans-serif, system-ui, sans-serif;
+    padding-inline:22px; padding-block:34px 60px;
+  }
+  .wrap{ max-width:1220px; margin:0 auto; }
+
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    box-shadow:var(--shadow); padding:30px 30px 26px;
+  }
+
+  /* header */
+  .brand{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+  .brand svg{ flex-shrink:0; }
+  .brand span{ font-size:19px; font-weight:800; letter-spacing:-.01em; }
+
+  h1{
+    font-size:clamp(20px,2.6vw,27px); line-height:1.28; margin:0 0 8px;
+    font-weight:800; letter-spacing:-.01em; text-wrap:balance;
+  }
+  h1 .arrow{ color:var(--faint); font-weight:500; padding:0 4px; }
+  .sub{ color:var(--muted); font-size:14px; line-height:1.6; max-width:80ch; margin:0 0 22px; }
+
+  /* main flow grid */
+  .flow-row{
+    display:grid; grid-template-columns:repeat(5,1fr); gap:14px; position:relative;
+  }
+  @media (max-width:980px){ .flow-row{ grid-template-columns:1fr 1fr; } }
+  @media (max-width:560px){ .flow-row{ grid-template-columns:1fr; } }
+
+  .stage{
+    border-radius:12px; padding:14px 14px 16px; border:1px solid; min-height:150px;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .stage:not(:last-child)::after{
+    content:'';
+    position:absolute; right:-15px; bottom:72px; transform:translate(50%,50%);
+    width:16px; height:16px; z-index:3;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 8h11M8 3l5 5-5 5' fill='none' stroke='%239298a6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:center;
+  }
+  @media (max-width:980px){ .stage:not(:last-child)::after{ content:none; } }
+  .stage h3{ font-size:13px; font-weight:700; margin:0 0 2px; }
+  .stage p{ font-size:11px; color:inherit; opacity:.75; margin:0 0 14px; line-height:1.4; }
+
+  .stage.p1{ background:var(--p1); border-color:var(--p1-line); color:var(--p1-ink); }
+  .stage.p2{ background:var(--p2); border-color:var(--p2-line); color:var(--p2-ink); }
+  .stage.p3{ background:var(--p3); border-color:var(--p3-line); color:var(--p3-ink); }
+  .stage.p4{ background:var(--p4); border-color:var(--p4-line); color:var(--p4-ink); }
+  .stage.p5{ background:var(--p5); border-color:var(--p5-line); color:var(--p5-ink); }
+  .stage.p6{ background:var(--p6); border-color:var(--p6-line); color:var(--p6-ink); }
+
+  .node-chain{ display:flex; align-items:center; gap:6px; margin-top:auto; }
+  .node-chain .connector{ color:inherit; opacity:.45; font-size:13px; }
+
+  .node{ display:flex; flex-direction:column; align-items:center; gap:6px; width:64px; }
+  .badge{
+    width:44px; height:44px; border-radius:11px; display:flex; align-items:center; justify-content:center;
+    background:var(--node-bg); border:1px solid var(--node-line); box-shadow:var(--shadow); flex-shrink:0;
+  }
+  .node .label{ font-size:9.5px; font-weight:700; color:var(--ink); text-align:center; line-height:1.25; }
+  .node .sub-label{ font-size:8.5px; color:var(--muted); text-align:center; line-height:1.2; }
+
+  /* branch section */
+  .branch-wrap{ position:relative; margin-top:10px; padding-top:26px; }
+  .branch-connector{ width:100%; height:26px; display:block; }
+
+  .branch{
+    border-radius:12px; padding:16px 18px 18px; border:1px solid var(--p6-line);
+    background:var(--p6); color:var(--p6-ink); max-width:640px; margin:0 auto;
+  }
+  .branch h3{ font-size:13px; font-weight:700; margin:0 0 2px; }
+  .branch p{ font-size:11px; opacity:.8; margin:0 0 16px; }
+  .branch-body{ display:flex; align-items:center; gap:18px; justify-content:center; flex-wrap:wrap; }
+
+  .diamond{
+    width:64px; height:64px; background:var(--node-bg); border:1px solid var(--node-line);
+    border-radius:14px; transform:rotate(45deg); box-shadow:var(--shadow);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .diamond span{ transform:rotate(-45deg); font-size:9.5px; font-weight:700; color:var(--ink); text-align:center; }
+
+  .branch-paths{ display:flex; flex-direction:column; gap:10px; }
+  .path-row{ display:flex; align-items:center; gap:8px; }
+  .path-tag{
+    font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    width:34px; flex-shrink:0; text-align:right;
+  }
+  .path-tag.yes{ color:var(--p3-ink); }
+  .path-tag.no{ color:var(--faint); }
+
+  .ledger{ display:flex; flex-direction:column; align-items:center; gap:6px; width:70px; }
+
+  /* bottom info grid */
+  .info-grid{ display:grid; grid-template-columns:1.15fr 1fr 1fr; gap:1px; background:var(--line);
+    border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:26px; }
+  @media (max-width:860px){ .info-grid{ grid-template-columns:1fr; } }
+  .info-col{ background:var(--card); padding:18px 20px; }
+  .info-head{ display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .info-head b{ font-size:13px; font-weight:700; }
+  .dot{ width:16px; height:16px; border-radius:50%; flex-shrink:0; }
+  .dot.good{ background:#2fa85a; }
+  .dot.bolt{ background:#3d6fe0; }
+  .dot.bulb{ background:#c8892c; }
+
+  ol.steps{ margin:0; padding-left:18px; font-size:11.5px; color:var(--muted); line-height:1.9; }
+  ol.steps b{ color:var(--ink); font-weight:600; }
+
+  ul.apps{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+  ul.apps li{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink); }
+  .mini-badge{ width:26px; height:26px; border-radius:7px; border:1px solid var(--node-line); background:var(--node-bg);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  ul.apps li span.tag{ color:var(--faint); font-size:10.5px; }
+
+  ul.why{ list-style:none; margin:0 0 14px; padding:0; display:flex; flex-direction:column; gap:9px; }
+  ul.why li{ display:flex; gap:8px; font-size:12px; color:var(--ink); align-items:flex-start; }
+  ul.why li::before{ content:'✓'; color:#2fa85a; font-weight:700; flex-shrink:0; }
+
+  .note{
+    display:flex; gap:8px; background:var(--p2); border:1px solid var(--p2-line); border-radius:9px;
+    padding:11px 12px; font-size:11.5px; color:var(--p2-ink); line-height:1.5;
+  }
+  .note b{ font-weight:700; }
+  .note u{ text-decoration-color:var(--p2-line); }
+
+  footer{ text-align:center; color:var(--faint); font-size:11px; margin-top:22px; }
+</style>
+
+<div class="wrap">
+  <div class="card">
+
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+        <circle cx="6" cy="20" r="3" fill="#1d4ea6"/>
+        <circle cx="20" cy="20" r="3" fill="#1f7a43"/>
+        <circle cx="13" cy="6" r="3" fill="#a4293d"/>
+        <path d="M8.4 18.2 11.4 8.6M17.6 18.2 14.6 8.6M9 20 H17" stroke="#15181f" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <span>Pilant</span>
+    </div>
+
+    <h1>Goal <span class="arrow">→</span> Search <span class="arrow">→</span> AI Draft <span class="arrow">→</span> Approval <span class="arrow">→</span> Execute + Audit</h1>
+    <p class="sub">This is how Pilant's Automate mode turns a plain-English goal into a real action on Jira, Splunk, or your CRM: it finds the exact records first, drafts the write with AI, then stops for a human to approve or reject before anything runs — and logs the outcome either way.</p>
+
+    <div class="flow-row">
+      <!-- 1 Trigger -->
+      <div class="stage p1">
+        <h3>1. Goal</h3>
+        <p>Typed, or picked from a suggestion</p>
+        <div class="node-chain">
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="5" cy="15" r="2.4" fill="#1d4ea6"/><circle cx="15" cy="15" r="2.4" fill="#1d4ea6"/><circle cx="10" cy="4.5" r="2.4" fill="#1d4ea6"/><path d="M6.5 13 9 6.5M13.5 13 11 6.5" stroke="#1d4ea6" stroke-width="1.3"/></svg>
+            </div>
+            <div class="label">Pilant Agent</div>
+            <div class="sub-label">Automate tab</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 Search -->
+      <div class="stage p2">
+        <h3>2. Deterministic Search</h3>
+        <p>Server finds the exact matching records</p>
+        <div class="node-chain">
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="3" fill="none" stroke="#5b34b8" stroke-width="1.5"/><path d="M7 10h6M7 7h6M7 13h3" stroke="#5b34b8" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+            <div class="label">Jira / Splunk / CRM</div>
+            <div class="sub-label">query the system</div>
+          </div>
+          <span class="connector">→</span>
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="9" cy="9" r="6" fill="none" stroke="#5b34b8" stroke-width="1.5"/><path d="M13.5 13.5 17 17" stroke="#5b34b8" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div class="label">Match</div>
+            <div class="sub-label">filters, no guessing</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 AI Draft -->
+      <div class="stage p3">
+        <h3>3. AI Drafting</h3>
+        <p>Model writes the action, never picks the target</p>
+        <div class="node-chain">
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 2 L11.6 8.4 L18 10 L11.6 11.6 L10 18 L8.4 11.6 L2 10 L8.4 8.4 Z" fill="#1f7a43"/></svg>
+            </div>
+            <div class="label">Claude</div>
+            <div class="sub-label">draft comment / message</div>
+          </div>
+          <span class="connector">→</span>
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10.5 8 14.5 16 5.5" fill="none" stroke="#1f7a43" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="label">Validate</div>
+            <div class="sub-label">checked against search</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 Approval -->
+      <div class="stage p4">
+        <h3>4. Human Approval</h3>
+        <p>Every write waits for a person</p>
+        <div class="node-chain">
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="7" r="3.2" fill="none" stroke="#93690b" stroke-width="1.5"/><path d="M4 17c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" fill="none" stroke="#93690b" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div class="label">Reviewer</div>
+            <div class="sub-label">reads the draft</div>
+          </div>
+          <span class="connector">→</span>
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><rect x="2.5" y="2.5" width="15" height="15" rx="4" fill="none" stroke="#93690b" stroke-width="1.5"/><path d="M6 10.5 9 13.5 14 7" fill="none" stroke="#93690b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="label">Approve / Reject</div>
+            <div class="sub-label">one click, per step</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 Execute -->
+      <div class="stage p5">
+        <h3>5. Execute &amp; Notify</h3>
+        <p>Only approved steps ever run</p>
+        <div class="node-chain">
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><path d="M11 2 4 11h5l-1 7 7-9h-5l1-7Z" fill="#0d7d72"/></svg>
+            </div>
+            <div class="label">Run tool</div>
+            <div class="sub-label">assign / comment</div>
+          </div>
+          <span class="connector">→</span>
+          <div class="node">
+            <div class="badge">
+              <svg width="20" height="20" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="2.5" fill="none" stroke="#0d7d72" stroke-width="1.4"/><path d="M3 5.5 10 11 17 5.5" fill="none" stroke="#0d7d72" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="label">Notify owner</div>
+            <div class="sub-label">Slack or Gmail draft</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- branch -->
+    <div class="branch-wrap">
+      <svg class="branch-connector" viewBox="0 0 1200 30" preserveAspectRatio="none">
+        <path d="M 860 0 V 14 Q 860 22 852 22 L 600 22" fill="none" stroke="#c9ccd4" stroke-width="1.4"/>
+        <path d="M 600 22 L 600 26" fill="none" stroke="#c9ccd4" stroke-width="1.4" marker-end="url(#a2)"/>
+        <defs><marker id="a2" viewBox="0 0 10 10" refX="5" refY="8" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L5,10 L10,0 Z" fill="#c9ccd4"/></marker></defs>
+      </svg>
+
+      <div class="branch">
+        <h3>6. Every Decision Is Logged</h3>
+        <p>Approved or rejected — nothing skips the audit trail</p>
+        <div class="branch-body">
+          <div class="diamond"><span>Approved?</span></div>
+          <div class="branch-paths">
+            <div class="path-row">
+              <span class="path-tag yes">true</span>
+              <div class="node">
+                <div class="badge"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 9 7 13 15 4" fill="none" stroke="#1f7a43" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="sub-label">step runs</div>
+              </div>
+            </div>
+            <div class="path-row">
+              <span class="path-tag no">false</span>
+              <div class="node">
+                <div class="badge"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M4 4 14 14M14 4 4 14" stroke="#a4293d" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+                <div class="sub-label">step never runs</div>
+              </div>
+            </div>
+          </div>
+          <span class="connector" style="color:#a4293d;opacity:.6;">→</span>
+          <div class="ledger">
+            <div class="badge"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="2.5" width="14" height="15" rx="2" fill="none" stroke="#a4293d" stroke-width="1.4"/><path d="M6 6.5h8M6 9.5h8M6 12.5h5" stroke="#a4293d" stroke-width="1.2" stroke-linecap="round"/></svg></div>
+            <div class="label">Audit log</div>
+            <div class="sub-label">append-only, both outcomes</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- info grid -->
+    <div class="info-grid">
+      <div class="info-col">
+        <div class="info-head"><span class="dot good"></span><b>How this workflow works</b></div>
+        <ol class="steps">
+          <li><b>Goal</b> — you type or pick a plain-English automation goal.</li>
+          <li><b>Search</b> — the server queries Jira, Splunk, or the CRM directly; the model never chooses.</li>
+          <li><b>Match</b> — results are filtered against your goal's criteria (status, severity, priority…).</li>
+          <li><b>Draft</b> — Claude writes the comment, assignment, or message for each match.</li>
+          <li><b>Validate</b> — every target the model names is checked against the real search results.</li>
+          <li><b>Review</b> — you see each step's tool, target, and drafted text before anything happens.</li>
+          <li><b>Approve / Reject</b> — one click per step; rejecting never runs the tool.</li>
+          <li><b>Execute</b> — approved steps call the real Jira / Splunk / CRM / Slack / Gmail tool.</li>
+          <li><b>Audit</b> — actor, decision, and result are recorded immutably, either way.</li>
+        </ol>
+      </div>
+
+      <div class="info-col">
+        <div class="info-head"><span class="dot bolt"></span><b>Systems Connected</b></div>
+        <ul class="apps">
+          <li><span class="mini-badge"><svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="2.5" fill="none" stroke="#1d4ea6" stroke-width="1.3"/></svg></span>Jira <span class="tag">issues &amp; comments</span></li>
+          <li><span class="mini-badge"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1 8 6 13 7 8 8 7 13 6 8 1 7 6 6Z" fill="#1f7a43"/></svg></span>Splunk <span class="tag">notable events</span></li>
+          <li><span class="mini-badge"><svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="#0d7d72" stroke-width="1.3"/></svg></span>CRM <span class="tag">follow-up tasks</span></li>
+          <li><span class="mini-badge"><svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="3" width="11" height="8" rx="1.6" fill="none" stroke="#93690b" stroke-width="1.3"/><path d="M2 4l5 3.5L12 4" fill="none" stroke="#93690b" stroke-width="1.1"/></svg></span>Gmail <span class="tag">draft messages</span></li>
+          <li><span class="mini-badge"><svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="4" width="10" height="7" rx="1.6" fill="none" stroke="#5b34b8" stroke-width="1.3"/><path d="M4.5 4V3M9.5 4V3" stroke="#5b34b8" stroke-width="1.2" stroke-linecap="round"/></svg></span>Slack <span class="tag">team notifications</span></li>
+          <li><span class="mini-badge"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.5 8.2 5.7 12.5 7 8.2 8.3 7 12.5 5.8 8.3 1.5 7 5.8 5.7Z" fill="#a4293d"/></svg></span>Claude <span class="tag">drafting model</span></li>
+        </ul>
+      </div>
+
+      <div class="info-col">
+        <div class="info-head"><span class="dot bulb"></span><b>Why use Pilant for this?</b></div>
+        <ul class="why">
+          <li>Approval required before any write, every time</li>
+          <li>Immutable audit trail — one row per decision</li>
+          <li>Targets found deterministically, never guessed</li>
+          <li>Same pattern across Jira, Splunk, and CRM</li>
+          <li>No standing webhook or automation to secure</li>
+          <li>Failed steps can be retried without re-approving</li>
+        </ul>
+        <div class="note"><span>💡</span><span>This is the exact pattern behind every Automate goal — <u>swap the connected system and the goal text</u>, the search → draft → approve → execute → audit shape stays the same.</span></div>
+      </div>
+    </div>
+
+  </div>
+  <footer>Pilant Automate — workflow wireframe · structural reference, not final visual styling</footer>
+</div>
